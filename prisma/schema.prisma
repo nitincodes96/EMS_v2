@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Platform {
+  id            String         @id @default(uuid())
+  name          String
+  logoURL       String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  organizations Organization[]
+}
+
+model Organization {
+  id         String   @id @default(uuid())
+  name       String
+  logoURL    String?
+  platformId String
+  platform   Platform @relation(fields: [platformId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  users      User[]
+}
+
+model User {
+  id             String        @id @default(uuid())
+  email          String        @unique
+  username       String
+  password       String
+  role           Role          @default(USER)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  isVerified     Boolean       @default(false)
+  otp            String?
+  otpExpiry      DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  USER
+}
