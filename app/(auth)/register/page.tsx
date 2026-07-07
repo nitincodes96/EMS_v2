@@ -121,7 +121,16 @@ export default function RegisterPage() {
     if (!file) return;
     platformForm.setValue("logo", file, { shouldValidate: true });
     const reader = new FileReader();
-    reader.onload = () => setLogoPreview(reader.result as string);
+    reader.onload = () => {
+      const result = reader.result as string;
+      setLogoPreview(result);
+      
+      const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement || document.createElement('link');
+      link.type = 'image/x-icon';
+      link.rel = 'icon';
+      link.href = result;
+      document.getElementsByTagName('head')[0].appendChild(link);
+    };
     reader.readAsDataURL(file);
   }
 
@@ -129,6 +138,11 @@ export default function RegisterPage() {
     platformForm.setValue("logo", undefined);
     setLogoPreview(undefined);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    
+    const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+    if (link) {
+      link.href = "/favicon.ico";
+    }
   }
 
   function handlePlatformSubmit(values: PlatformValues) {
@@ -150,7 +164,7 @@ export default function RegisterPage() {
       const existing = JSON.parse(
         window.sessionStorage.getItem(DRAFT_KEY) ?? "{}"
       );
-      
+
       const payload = {
         platformName: existing.platformName,
         logoBase64: existing.logoPreview,
@@ -221,10 +235,10 @@ export default function RegisterPage() {
                           "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-medium transition-colors",
                           isComplete && "border-indigo-600 bg-indigo-600 text-white",
                           isActive &&
-                            "border-indigo-600 bg-white text-indigo-600 ring-4 ring-indigo-50",
+                          "border-indigo-600 bg-white text-indigo-600 ring-4 ring-indigo-50",
                           !isComplete &&
-                            !isActive &&
-                            "border-slate-200 bg-white text-slate-400"
+                          !isActive &&
+                          "border-slate-200 bg-white text-slate-400"
                         )}
                       >
                         {isComplete ? <Check className="h-3.5 w-3.5" /> : stepNumber}
@@ -356,7 +370,7 @@ export default function RegisterPage() {
                   <Label htmlFor="username">Username</Label>
                   <Input
                     id="username"
-                    placeholder="daniel.ahmadi"
+                    placeholder="Enter Username"
                     autoFocus
                     {...accountForm.register("username")}
                   />
@@ -372,7 +386,7 @@ export default function RegisterPage() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="admin@acme.com"
+                    placeholder="Enter Your Email Id"
                     {...accountForm.register("email")}
                   />
                   {accountForm.formState.errors.email && (
@@ -472,7 +486,7 @@ export default function RegisterPage() {
         <div className="relative hidden h-full overflow-hidden rounded-[32px] bg-slate-950 lg:flex lg:flex-col lg:justify-between lg:p-10 border border-slate-800">
           <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-indigo-500/20 blur-3xl" />
           <div className="pointer-events-none absolute bottom-0 left-0 h-96 w-96 rounded-full bg-violet-600/20 blur-3xl" />
-          
+
           {/* Subtle grid pattern */}
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
 
@@ -497,8 +511,12 @@ export default function RegisterPage() {
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 p-[1px]">
-                      <div className="h-full w-full rounded-full bg-slate-900 flex items-center justify-center">
-                        <Activity className="h-4 w-4 text-white" />
+                      <div className="h-full w-full rounded-full bg-slate-900 flex items-center justify-center overflow-hidden">
+                        {logoPreview ? (
+                          <img src={logoPreview} alt="Logo" className="h-full w-full object-cover" />
+                        ) : (
+                          <Activity className="h-4 w-4 text-white" />
+                        )}
                       </div>
                     </div>
                     <div>
@@ -510,7 +528,7 @@ export default function RegisterPage() {
                     <Layers className="h-4 w-4 text-indigo-400" />
                   </div>
                 </div>
-                
+
                 <div className="space-y-3">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="flex items-center justify-between rounded-lg bg-white/5 p-3">
@@ -523,7 +541,7 @@ export default function RegisterPage() {
                   ))}
                 </div>
               </div>
-              
+
               {/* Floating element 1 */}
               <div className="absolute -right-8 -top-8 z-30 animate-pulse rounded-2xl border border-white/10 bg-slate-800/90 p-4 shadow-xl backdrop-blur-md">
                 <div className="flex items-center gap-3">
@@ -543,7 +561,7 @@ export default function RegisterPage() {
                   <div className="flex -space-x-3">
                     {[1, 2, 3].map((i) => (
                       <div key={i} className="h-8 w-8 rounded-full border-2 border-slate-900 bg-slate-800 flex items-center justify-center">
-                         <span className="text-[10px] text-slate-400">{i}</span>
+                        <span className="text-[10px] text-slate-400">{i}</span>
                       </div>
                     ))}
                   </div>

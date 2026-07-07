@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { ShieldCheck, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp";
 import { toast } from "react-hot-toast";
 
 const DRAFT_KEY = "registration-draft";
@@ -120,16 +124,22 @@ export default function VerifyPage() {
           </p>
         </div>
 
-        <form onSubmit={handleVerify} className="space-y-4">
-          <div>
-            <Input
-              type="text"
-              placeholder="Enter 6-digit code"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value)}
-              className="text-center text-lg tracking-widest"
+        <form onSubmit={handleVerify} className="space-y-6">
+          <div className="flex justify-center">
+            <InputOTP
               maxLength={6}
-            />
+              value={otp}
+              onChange={setOtp}
+            >
+              <InputOTPGroup>
+                <InputOTPSlot index={0} className="size-10 sm:size-12 text-lg" />
+                <InputOTPSlot index={1} className="size-10 sm:size-12 text-lg" />
+                <InputOTPSlot index={2} className="size-10 sm:size-12 text-lg" />
+                <InputOTPSlot index={3} className="size-10 sm:size-12 text-lg" />
+                <InputOTPSlot index={4} className="size-10 sm:size-12 text-lg" />
+                <InputOTPSlot index={5} className="size-10 sm:size-12 text-lg" />
+              </InputOTPGroup>
+            </InputOTP>
           </div>
 
           <Button

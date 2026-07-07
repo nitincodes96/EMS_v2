@@ -53,7 +53,7 @@ export async function POST(req: Request) {
           const filePath = path.join(uploadsDir, filename);
           await fs.writeFile(filePath, base64Data, 'base64');
           
-          logoURL = `/uploads/platform/${filename}`;
+          logoURL = `/api/upload/platform/${filename}`;
         }
       } catch (err) {
         console.error("Error saving logo:", err);

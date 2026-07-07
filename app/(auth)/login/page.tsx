@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ShieldCheck, Sparkles, Activity, Lock } from "lucide-react";
+import { ShieldCheck, Sparkles, Activity, Lock, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [platformName, setPlatformName] = useState("EMS Portal");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     fetch("/api/platform-exists")
@@ -64,7 +65,7 @@ export default function LoginPage() {
             <div className="mb-8 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 shadow-inner">
               <Lock className="h-6 w-6 text-indigo-600" />
             </div>
-            
+
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
               Welcome back
             </h1>
@@ -73,7 +74,7 @@ export default function LoginPage() {
             </p>
 
             <form onSubmit={onSubmit} className="mt-8 space-y-6">
-              
+
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
@@ -89,18 +90,38 @@ export default function LoginPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="password">Password</Label>
-                    <Link href="/forgot-password" className="text-xs font-medium text-indigo-600 hover:underline">
+                    <Link
+                      href="/forgot-password"
+                      className="text-xs font-medium text-indigo-600 hover:underline"
+                    >
                       Forgot password?
                     </Link>
                   </div>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
+
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="pr-12"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-4 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-5 w-5" />
+                      ) : (
+                        <Eye className="h-5 w-5" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -119,7 +140,7 @@ export default function LoginPage() {
         <div className="relative hidden h-full overflow-hidden rounded-[32px] bg-slate-950 lg:flex lg:flex-col lg:justify-between lg:p-10 border border-slate-800">
           <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-indigo-500/20 blur-3xl" />
           <div className="pointer-events-none absolute bottom-0 left-0 h-96 w-96 rounded-full bg-violet-600/20 blur-3xl" />
-          
+
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
 
           <div className="relative z-10">
@@ -142,8 +163,8 @@ export default function LoginPage() {
 
           <div className="relative z-10 flex items-center justify-between">
             <div className="flex items-center gap-2">
-               <ShieldCheck className="h-4 w-4 text-emerald-400" />
-               <p className="text-xs text-slate-400">Secure connection</p>
+              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              <p className="text-xs text-slate-400">Secure connection</p>
             </div>
           </div>
         </div>
