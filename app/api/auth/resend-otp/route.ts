@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { sendMail } from "@/lib/mail";
+import { otpEmailHtml } from "@/lib/email-templates";
 
 export async function POST(req: Request) {
   try {
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
     await sendMail({
       to: email,
       subject: "Your new EMS Portal verification code",
-      html: `<p>Your verification code is: <strong>${otp}</strong></p><p>This code will expire in 10 minutes.</p>`
+      html: otpEmailHtml({ otp }),
     });
 
     return NextResponse.json({ message: "OTP sent successfully" }, { status: 200 });

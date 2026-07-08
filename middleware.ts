@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { getDashboardPath } from "@/lib/role-routes";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -25,6 +26,28 @@ export async function middleware(request: NextRequest) {
   // Get user session via NextAuth token
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
   const isAuthenticated = !!token;
+
+  let isActiveSession = isAuthenticated;
+  try {
+    if (isAuthenticated) {
+      const statusResponse = await fetch(new URL("/api/auth/session-status", request.url).toString(), {
+        cache: "no-store",
+        headers: {
+          cookie: request.headers.get("cookie") || "",
+        },
+      });
+
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+        isActiveSession = !!statusData.authenticated && !!statusData.isActive;
+      } else {
+        isActiveSession = false;
+      }
+    }
+  } catch (err) {
+    console.error("Middleware session status fetch error:", err);
+    isActiveSession = false;
+  }
   
   // Logic: Platform Doesn't Exist
   if (!platformExists) {
@@ -47,21 +70,19 @@ export async function middleware(request: NextRequest) {
   }
 
   // If authenticated and trying to access login, redirect to dashboard
-  if (isAuthenticated && pathname === "/login") {
-    if (token.role === "SUPER_ADMIN") {
-      return NextResponse.redirect(new URL("/super-admin/dashboard", request.url));
-    } else {
-      return NextResponse.redirect(new URL("/user/dashboard", request.url));
-    }
+  if (isAuthenticated && isActiveSession && pathname === "/login") {
+    return NextResponse.redirect(new URL(getDashboardPath(token.role as string), request.url));
   }
-  
+
+  if (isAuthenticated && !isActiveSession) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("error", "ACCOUNT_DEACTIVATED");
+    return NextResponse.redirect(loginUrl);
+  }
+
   // If authenticated and trying to access root `/`, redirect to dashboard
-  if (isAuthenticated && pathname === "/") {
-    if (token.role === "SUPER_ADMIN") {
-      return NextResponse.redirect(new URL("/super-admin/dashboard", request.url));
-    } else {
-      return NextResponse.redirect(new URL("/user/dashboard", request.url));
-    }
+  if (isAuthenticated && isActiveSession && pathname === "/") {
+    return NextResponse.redirect(new URL(getDashboardPath(token.role as string), request.url));
   }
 
   return NextResponse.next();

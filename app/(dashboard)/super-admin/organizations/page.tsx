@@ -24,6 +24,7 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
     Plus,
     Users,
@@ -37,26 +38,36 @@ import {
     Clock,
     Calendar,
     ImagePlus,
+    Trash2,
+    Upload,
+    X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { parseHolidayCsv, type HolidayCsvRow } from "@/lib/csv-holidays"
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
+interface OrgLocation {
+    id: string
+    name: string
+    latitude: number
+    longitude: number
+    radiusMeters: number
+}
+
 interface Organization {
     id: string
     name: string
+    slug: string
     description: string | null
     logoUrl: string | null
     workingDays: string
     shiftStartTime: string
     shiftEndTime: string
     lateGraceMinutes: number
-    checkInRadiusMeters: number
-    checkOutRadiusMeters: number
-    latitude: number | null
-    longitude: number | null
+    locations: OrgLocation[]
     employeeLeaveQuota: number
     internLeaveQuota: number
     contractualLeaveQuota: number
@@ -82,7 +93,14 @@ const GRACE_OPTIONS = [
     { label: "30 min", value: 30 },
 ]
 
-const STEPS = ["Basic Info", "Work Schedule", "Geo-fence", "Leave Quotas", "Review"]
+const STEPS = ["Basic Info", "Work Schedule", "Geo-fence", "Leave Quotas", "Holiday Calendar", "Review"]
+
+interface DraftLocation {
+    name: string
+    latitude: string
+    longitude: string
+    radiusMeters: number
+}
 
 const defaultFormData = {
     name: "",
@@ -91,12 +109,8 @@ const defaultFormData = {
     shiftStartTime: "09:00",
     shiftEndTime: "18:00",
     lateGraceMinutes: 5,
-    checkInLatitude: "",
-    checkInLongitude: "",
-    checkInRadiusMeters: 100,
-    checkOutLatitude: "",
-    checkOutLongitude: "",
-    checkOutRadiusMeters: 100,
+    locations: [] as DraftLocation[],
+    holidays: [] as HolidayCsvRow[],
     employeeLeaveQuota: 20,
     internLeaveQuota: 20,
     contractualLeaveQuota: 20,
@@ -216,6 +230,180 @@ function ReviewRow({
 }
 
 // ---------------------------------------------------------------------------
+// Shared locations editor (used by both the wizard and the edit dialog)
+// ---------------------------------------------------------------------------
+
+function LocationsEditor({
+    locations,
+    onChange,
+}: {
+    locations: DraftLocation[]
+    onChange: (locations: DraftLocation[]) => void
+}) {
+    const addLocation = () => {
+        onChange([...locations, { name: "", latitude: "", longitude: "", radiusMeters: 100 }])
+    }
+    const updateLocation = (idx: number, patch: Partial<DraftLocation>) => {
+        onChange(locations.map((loc, i) => (i === idx ? { ...loc, ...patch } : loc)))
+    }
+    const removeLocation = (idx: number) => {
+        onChange(locations.filter((_, i) => i !== idx))
+    }
+
+    return (
+        <div className="space-y-3">
+            <div className="flex items-start gap-2.5 rounded-lg border border-indigo-100 bg-indigo-50 p-3">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+                <p className="text-xs leading-relaxed text-indigo-700">
+                    Add one or more office locations. Employees can check in and out from any of them. Leave empty to skip geo-fencing.
+                </p>
+            </div>
+
+            {locations.length === 0 && (
+                <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-center text-xs text-slate-400">
+                    No locations added — check-in/out will be unrestricted.
+                </p>
+            )}
+
+            <div className="space-y-3">
+                {locations.map((loc, idx) => (
+                    <div key={idx} className="space-y-2 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                        <div className="flex items-center gap-2">
+                            <Input
+                                placeholder="Location name, e.g. HQ"
+                                value={loc.name}
+                                onChange={(e) => updateLocation(idx, { name: e.target.value })}
+                                className="flex-1"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => removeLocation(idx)}
+                                className="shrink-0 rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                            >
+                                <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            <Input
+                                type="number"
+                                step="any"
+                                placeholder="Latitude"
+                                value={loc.latitude}
+                                onChange={(e) => updateLocation(idx, { latitude: e.target.value })}
+                            />
+                            <Input
+                                type="number"
+                                step="any"
+                                placeholder="Longitude"
+                                value={loc.longitude}
+                                onChange={(e) => updateLocation(idx, { longitude: e.target.value })}
+                            />
+                            <Input
+                                type="number"
+                                min="1"
+                                placeholder="Radius (m)"
+                                value={loc.radiusMeters}
+                                onChange={(e) => updateLocation(idx, { radiusMeters: parseInt(e.target.value) || 100 })}
+                            />
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <Button type="button" variant="outline" className="w-full border-dashed" onClick={addLocation}>
+                <Plus className="mr-1.5 h-4 w-4" /> Add location
+            </Button>
+        </div>
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Holiday calendar CSV import step (used by the wizard)
+// ---------------------------------------------------------------------------
+
+function HolidayCsvStep({
+    holidays,
+    onChange,
+}: {
+    holidays: HolidayCsvRow[]
+    onChange: (holidays: HolidayCsvRow[]) => void
+}) {
+    const [fileName, setFileName] = useState<string | null>(null)
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+        setFileName(file.name)
+        const text = await file.text()
+        onChange(parseHolidayCsv(text))
+    }
+
+    const removeRow = (idx: number) => {
+        onChange(holidays.filter((_, i) => i !== idx))
+    }
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-start gap-2.5 rounded-lg border border-indigo-100 bg-indigo-50 p-3">
+                <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+                <p className="text-xs leading-relaxed text-indigo-700">
+                    Optionally import a starting holiday calendar via CSV. First column Date, second Holiday Name,
+                    third Holiday Type (Custom, Religious or National). This step is fully optional — skip it and
+                    add holidays later from the organization page.
+                </p>
+            </div>
+
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500 transition-colors hover:border-indigo-300 hover:text-indigo-600">
+                <Upload className="h-4 w-4" />
+                {fileName ? `Selected: ${fileName}` : "Upload holiday calendar CSV"}
+                <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileChange} />
+            </label>
+
+            {holidays.length > 0 && (
+                <div className="overflow-hidden rounded-lg border border-slate-100">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Date</TableHead>
+                                <TableHead>Name</TableHead>
+                                <TableHead>Type</TableHead>
+                                <TableHead className="hidden sm:table-cell">Status</TableHead>
+                                <TableHead className="w-8" />
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {holidays.map((h, idx) => (
+                                <TableRow key={idx}>
+                                    <TableCell className="text-xs">{h.date}</TableCell>
+                                    <TableCell className="text-xs">{h.name || "—"}</TableCell>
+                                    <TableCell className="text-xs capitalize">{h.type.toLowerCase()}</TableCell>
+                                    <TableCell className="hidden text-xs sm:table-cell">
+                                        {h.error ? (
+                                            <span className="text-red-500">{h.error}</span>
+                                        ) : (
+                                            <span className="text-emerald-600">Valid</span>
+                                        )}
+                                    </TableCell>
+                                    <TableCell>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeRow(idx)}
+                                            className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                                        >
+                                            <X className="h-3.5 w-3.5" />
+                                        </button>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+            )}
+        </div>
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Create Organization wizard
 // ---------------------------------------------------------------------------
 
@@ -294,12 +482,25 @@ function CreateOrgWizard({
             payload.append("shiftStartTime", formData.shiftStartTime)
             payload.append("shiftEndTime", formData.shiftEndTime)
             payload.append("lateGraceMinutes", String(formData.lateGraceMinutes))
-            payload.append("checkInLatitude", formData.checkInLatitude)
-            payload.append("checkInLongitude", formData.checkInLongitude)
-            payload.append("checkInRadiusMeters", String(formData.checkInRadiusMeters))
-            payload.append("checkOutLatitude", formData.checkOutLatitude)
-            payload.append("checkOutLongitude", formData.checkOutLongitude)
-            payload.append("checkOutRadiusMeters", String(formData.checkOutRadiusMeters))
+            payload.append(
+                "locations",
+                JSON.stringify(
+                    formData.locations.map((l) => ({
+                        name: l.name,
+                        latitude: Number(l.latitude),
+                        longitude: Number(l.longitude),
+                        radiusMeters: Number(l.radiusMeters),
+                    }))
+                )
+            )
+            payload.append(
+                "holidays",
+                JSON.stringify(
+                    formData.holidays
+                        .filter((h) => !h.error)
+                        .map(({ name, date, type }) => ({ name, date, type }))
+                )
+            )
             payload.append("employeeLeaveQuota", String(formData.employeeLeaveQuota))
             payload.append("internLeaveQuota", String(formData.internLeaveQuota))
             payload.append("contractualLeaveQuota", String(formData.contractualLeaveQuota))
@@ -325,8 +526,9 @@ function CreateOrgWizard({
     const stepMeta = [
         { icon: <Building2 className="h-4 w-4" />, title: "Basic Info", hint: "Name and description" },
         { icon: <Clock className="h-4 w-4" />, title: "Work Schedule", hint: "Shift times and working days" },
-        { icon: <MapPin className="h-4 w-4" />, title: "Geo-fence", hint: "Check-in / check-out location" },
+        { icon: <MapPin className="h-4 w-4" />, title: "Geo-fence", hint: "Check-in / check-out locations" },
         { icon: <Calendar className="h-4 w-4" />, title: "Leave Quotas", hint: "Yearly quotas and monthly caps" },
+        { icon: <CalendarDays className="h-4 w-4" />, title: "Holiday Calendar", hint: "Optional CSV import" },
         { icon: <CheckCircle2 className="h-4 w-4" />, title: "Review", hint: "Confirm and create" },
     ]
 
@@ -442,7 +644,7 @@ function CreateOrgWizard({
                             <Label htmlFor="grace">Late grace window</Label>
                             <Select
                                 value={String(formData.lateGraceMinutes)}
-                                onValueChange={(v) => set("lateGraceMinutes", parseInt(v))}
+                                onValueChange={(v) => set("lateGraceMinutes", parseInt(v ?? "5"))}
                             >
                                 <SelectTrigger id="grace" className="w-full">
                                     <SelectValue />
@@ -463,94 +665,10 @@ function CreateOrgWizard({
                 )}
 
                 {step === 3 && (
-                    <div className="space-y-5">
-                        <div className="flex items-start gap-2.5 rounded-lg border border-indigo-100 bg-indigo-50 p-3">
-                            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
-                            <p className="text-xs leading-relaxed text-indigo-700">
-                                Set a location and radius for check-in and check-out. Leave both blank to skip geo-fencing.
-                            </p>
-                        </div>
-
-                        <div className="space-y-3">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                                Check-in point
-                            </p>
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                <div className="space-y-1.5">
-                                    <Label htmlFor="in-lat">Latitude</Label>
-                                    <Input
-                                        id="in-lat"
-                                        type="number"
-                                        step="any"
-                                        placeholder="e.g. 28.6139"
-                                        value={formData.checkInLatitude}
-                                        onChange={(e) => set("checkInLatitude", e.target.value)}
-                                    />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label htmlFor="in-lng">Longitude</Label>
-                                    <Input
-                                        id="in-lng"
-                                        type="number"
-                                        step="any"
-                                        placeholder="e.g. 77.2090"
-                                        value={formData.checkInLongitude}
-                                        onChange={(e) => set("checkInLongitude", e.target.value)}
-                                    />
-                                </div>
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label htmlFor="in-radius">Check-in radius (meters)</Label>
-                                <Input
-                                    id="in-radius"
-                                    type="number"
-                                    min="1"
-                                    value={formData.checkInRadiusMeters}
-                                    onChange={(e) => set("checkInRadiusMeters", parseInt(e.target.value) || 100)}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-3 border-t border-slate-100 pt-4">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                                Check-out point
-                            </p>
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                <div className="space-y-1.5">
-                                    <Label htmlFor="out-lat">Latitude</Label>
-                                    <Input
-                                        id="out-lat"
-                                        type="number"
-                                        step="any"
-                                        placeholder="e.g. 28.6139"
-                                        value={formData.checkOutLatitude}
-                                        onChange={(e) => set("checkOutLatitude", e.target.value)}
-                                    />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label htmlFor="out-lng">Longitude</Label>
-                                    <Input
-                                        id="out-lng"
-                                        type="number"
-                                        step="any"
-                                        placeholder="e.g. 77.2090"
-                                        value={formData.checkOutLongitude}
-                                        onChange={(e) => set("checkOutLongitude", e.target.value)}
-                                    />
-                                </div>
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label htmlFor="out-radius">Check-out radius (meters)</Label>
-                                <Input
-                                    id="out-radius"
-                                    type="number"
-                                    min="1"
-                                    value={formData.checkOutRadiusMeters}
-                                    onChange={(e) => set("checkOutRadiusMeters", parseInt(e.target.value) || 100)}
-                                />
-                            </div>
-                        </div>
-                    </div>
+                    <LocationsEditor
+                        locations={formData.locations}
+                        onChange={(locations) => set("locations", locations)}
+                    />
                 )}
 
                 {step === 4 && (
@@ -622,6 +740,13 @@ function CreateOrgWizard({
                 )}
 
                 {step === 5 && (
+                    <HolidayCsvStep
+                        holidays={formData.holidays}
+                        onChange={(holidays) => set("holidays", holidays)}
+                    />
+                )}
+
+                {step === 6 && (
                     <div className="space-y-3">
                         <ReviewRow icon={<Building2 className="h-4 w-4" />} label="Name" value={formData.name} />
                         {logoFile && <ReviewRow label="Logo" value={logoFile.name} />}
@@ -650,18 +775,10 @@ function CreateOrgWizard({
                             </p>
                             <ReviewRow
                                 icon={<MapPin className="h-4 w-4" />}
-                                label="Check-in"
+                                label="Locations"
                                 value={
-                                    formData.checkInLatitude && formData.checkInLongitude
-                                        ? `${formData.checkInRadiusMeters}m radius`
-                                        : "Not configured"
-                                }
-                            />
-                            <ReviewRow
-                                label="Check-out"
-                                value={
-                                    formData.checkOutLatitude && formData.checkOutLongitude
-                                        ? `${formData.checkOutRadiusMeters}m radius`
+                                    formData.locations.length > 0
+                                        ? `${formData.locations.length} location${formData.locations.length > 1 ? "s" : ""} configured`
                                         : "Not configured"
                                 }
                             />
@@ -682,6 +799,21 @@ function CreateOrgWizard({
                             <ReviewRow
                                 label="Contractual"
                                 value={`${formData.contractualLeaveQuota}d yearly · ${formData.contractualMonthlyCap}d/mo`}
+                            />
+                        </div>
+
+                        <div className="space-y-2 pt-1">
+                            <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                                Holiday calendar
+                            </p>
+                            <ReviewRow
+                                icon={<CalendarDays className="h-4 w-4" />}
+                                label="Holidays"
+                                value={
+                                    formData.holidays.filter((h) => !h.error).length > 0
+                                        ? `${formData.holidays.filter((h) => !h.error).length} holiday(s) to be created`
+                                        : "None"
+                                }
                             />
                         </div>
                     </div>
@@ -713,11 +845,11 @@ function CreateOrgWizard({
                 </div>
 
                 {step < STEPS.length ? (
-                    <Button type="button" className="w-full sm:w-auto" onClick={next}>
+                    <Button type="button" className="w-full sm:w-auto bg-indigo-500 hover:bg-indigo-600 cursor-pointer" onClick={next}>
                         Continue
                     </Button>
                 ) : (
-                    <Button type="button" className="w-full sm:w-auto" onClick={handleSubmit} disabled={submitting}>
+                    <Button type="button" className="w-full sm:w-auto bg-indigo-500 hover:bg-indigo-600 cursor-pointer" onClick={handleSubmit} disabled={submitting}>
                         {submitting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
                         {submitting ? "Creating..." : "Create"}
                     </Button>
@@ -747,12 +879,12 @@ function EditOrgDialog({
         shiftStartTime: org.shiftStartTime,
         shiftEndTime: org.shiftEndTime,
         lateGraceMinutes: org.lateGraceMinutes,
-        checkInLatitude: org.latitude !== null ? String(org.latitude) : "",
-        checkInLongitude: org.longitude !== null ? String(org.longitude) : "",
-        checkInRadiusMeters: org.checkInRadiusMeters,
-        checkOutLatitude: org.latitude !== null ? String(org.latitude) : "",
-        checkOutLongitude: org.longitude !== null ? String(org.longitude) : "",
-        checkOutRadiusMeters: org.checkOutRadiusMeters,
+        locations: org.locations.map((l) => ({
+            name: l.name,
+            latitude: String(l.latitude),
+            longitude: String(l.longitude),
+            radiusMeters: l.radiusMeters,
+        })) as DraftLocation[],
         employeeLeaveQuota: org.employeeLeaveQuota,
         internLeaveQuota: org.internLeaveQuota,
         contractualLeaveQuota: org.contractualLeaveQuota,
@@ -813,12 +945,17 @@ function EditOrgDialog({
             payload.append("shiftStartTime", form.shiftStartTime)
             payload.append("shiftEndTime", form.shiftEndTime)
             payload.append("lateGraceMinutes", String(form.lateGraceMinutes))
-            payload.append("checkInLatitude", form.checkInLatitude)
-            payload.append("checkInLongitude", form.checkInLongitude)
-            payload.append("checkInRadiusMeters", String(form.checkInRadiusMeters))
-            payload.append("checkOutLatitude", form.checkOutLatitude)
-            payload.append("checkOutLongitude", form.checkOutLongitude)
-            payload.append("checkOutRadiusMeters", String(form.checkOutRadiusMeters))
+            payload.append(
+                "locations",
+                JSON.stringify(
+                    form.locations.map((l) => ({
+                        name: l.name,
+                        latitude: Number(l.latitude),
+                        longitude: Number(l.longitude),
+                        radiusMeters: Number(l.radiusMeters),
+                    }))
+                )
+            )
             payload.append("employeeLeaveQuota", String(form.employeeLeaveQuota))
             payload.append("internLeaveQuota", String(form.internLeaveQuota))
             payload.append("contractualLeaveQuota", String(form.contractualLeaveQuota))
@@ -937,7 +1074,7 @@ function EditOrgDialog({
                     </div>
                     <div className="space-y-1.5">
                         <Label htmlFor="edit-grace">Late grace window</Label>
-                        <Select value={String(form.lateGraceMinutes)} onValueChange={(v) => set("lateGraceMinutes", parseInt(v))}>
+                        <Select value={String(form.lateGraceMinutes)} onValueChange={(v) => set("lateGraceMinutes", parseInt(v ?? "5"))}>
                             <SelectTrigger id="edit-grace" className="w-full">
                                 <SelectValue />
                             </SelectTrigger>
@@ -952,78 +1089,11 @@ function EditOrgDialog({
                     </div>
                 </TabsContent>
 
-                <TabsContent value="geofence" className="mt-0 min-h-56 space-y-4 px-4 py-4 sm:px-5">
-                    <div className="space-y-3">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Check-in point</p>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <div className="space-y-1.5">
-                                <Label htmlFor="edit-in-lat">Latitude</Label>
-                                <Input
-                                    id="edit-in-lat"
-                                    type="number"
-                                    step="any"
-                                    value={form.checkInLatitude}
-                                    onChange={(e) => set("checkInLatitude", e.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label htmlFor="edit-in-lng">Longitude</Label>
-                                <Input
-                                    id="edit-in-lng"
-                                    type="number"
-                                    step="any"
-                                    value={form.checkInLongitude}
-                                    onChange={(e) => set("checkInLongitude", e.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label htmlFor="edit-in-radius">Check-in radius (meters)</Label>
-                            <Input
-                                id="edit-in-radius"
-                                type="number"
-                                min="1"
-                                value={form.checkInRadiusMeters}
-                                onChange={(e) => set("checkInRadiusMeters", parseInt(e.target.value) || 100)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="space-y-3 border-t border-slate-100 pt-3">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Check-out point</p>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <div className="space-y-1.5">
-                                <Label htmlFor="edit-out-lat">Latitude</Label>
-                                <Input
-                                    id="edit-out-lat"
-                                    type="number"
-                                    step="any"
-                                    value={form.checkOutLatitude}
-                                    onChange={(e) => set("checkOutLatitude", e.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label htmlFor="edit-out-lng">Longitude</Label>
-                                <Input
-                                    id="edit-out-lng"
-                                    type="number"
-                                    step="any"
-                                    value={form.checkOutLongitude}
-                                    onChange={(e) => set("checkOutLongitude", e.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label htmlFor="edit-out-radius">Check-out radius (meters)</Label>
-                            <Input
-                                id="edit-out-radius"
-                                type="number"
-                                min="1"
-                                value={form.checkOutRadiusMeters}
-                                onChange={(e) => set("checkOutRadiusMeters", parseInt(e.target.value) || 100)}
-                            />
-                        </div>
-                    </div>
+                <TabsContent value="geofence" className="mt-0 min-h-56 px-4 py-4 sm:px-5">
+                    <LocationsEditor
+                        locations={form.locations}
+                        onChange={(locations) => set("locations", locations)}
+                    />
                 </TabsContent>
 
                 <TabsContent value="quotas" className="mt-0 min-h-56 space-y-5 px-4 py-4 sm:px-5">
@@ -1093,7 +1163,7 @@ function EditOrgDialog({
                 <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={onClose}>
                     Cancel
                 </Button>
-                <Button type="submit" className="w-full sm:w-auto" disabled={submitting}>
+                <Button type="submit" className="w-full sm:w-auto cursor-pointer" disabled={submitting}>
                     {submitting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
                     {submitting ? "Saving..." : "Save changes"}
                 </Button>
@@ -1148,7 +1218,7 @@ export default function OrganizationsPage() {
 
     const goToOrg = (org: Organization) => {
         setNavigatingId(org.id)
-        router.push(`/organizations/${org.name}`)
+        router.push(`/super-admin/organizations/${org.slug}`)
     }
 
     if (loading) {
@@ -1170,7 +1240,7 @@ export default function OrganizationsPage() {
 
                 <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
                     <DialogTrigger className="cursor-pointer">
-                        <Button className="h-9 px-4 font-semibold bg-indigo-600 text-white hover:bg-indigo-700">
+                        <Button className="h-9 px-4 font-semibold bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer">
                             <Plus className="mr-1.5 h-4 w-4" />
                             New Organization
                         </Button>
@@ -1254,9 +1324,9 @@ export default function OrganizationsPage() {
                                 </div>
                                 <div className="flex flex-col items-center gap-0.5 bg-slate-50 px-3 py-2.5">
                                     <span className="text-base font-bold text-slate-900">
-                                        {org.latitude !== null ? `${org.checkInRadiusMeters}m` : "—"}
+                                        {org.locations.length > 0 ? `${org.locations.length} loc${org.locations.length > 1 ? "s" : ""}` : "—"}
                                     </span>
-                                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Radius</span>
+                                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Locations</span>
                                 </div>
                             </div>
 
@@ -1291,7 +1361,7 @@ export default function OrganizationsPage() {
                                 </p>
                                 <Button
                                     size="sm"
-                                    className="h-8 w-full text-xs"
+                                    className="h-8 w-full text-xs bg-indigo-500 hover:bg-indigo-600 cursor-pointer"
                                     onClick={() => goToOrg(org)}
                                     disabled={navigatingId === org.id}
                                 >

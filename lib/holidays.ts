@@ -1,0 +1,16 @@
+export const PREDEFINED_RELIGIOUS_HOLIDAYS: string[] = [
+  "Diwali",
+  "Holi",
+  "Eid al-Fitr",
+  "Eid al-Adha",
+  "Christmas",
+  "Good Friday",
+  "Guru Nanak Jayanti",
+  "Makar Sankranti",
+  "Raksha Bandhan",
+  "Navratri",
+  "Dussehra",
+  "Janmashtami",
+  "Maha Shivratri",
+  "Ram Navami",
+]

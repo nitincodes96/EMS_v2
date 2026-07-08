@@ -13,7 +13,7 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          return null;
+          throw new Error("MISSING_CREDENTIALS");
         }
 
         const user = await prisma.user.findUnique({
@@ -21,17 +21,25 @@ export const authOptions: NextAuthOptions = {
         });
 
         if (!user) {
-          return null;
+          throw new Error("USER_NOT_FOUND");
         }
 
         if (!user.isVerified) {
           throw new Error("Please verify your email address before logging in.");
         }
 
+        if (!user.password) {
+          throw new Error("Please set your password using the invite link sent to your email.");
+        }
+
+        if (!user.isActive) {
+          throw new Error("ACCOUNT_DEACTIVATED");
+        }
+
         const isPasswordValid = await bcrypt.compare(credentials.password, user.password);
 
         if (!isPasswordValid) {
-          return null;
+          throw new Error("INVALID_PASSWORD");
         }
 
         return {
@@ -39,6 +47,7 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           name: user.username,
           role: user.role,
+          organizationId: user.organizationId,
         };
       }
     })
@@ -51,6 +60,8 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = user.role;
         token.id = user.id;
+        token.organizationId = user.organizationId;
+        token.isActive = true;
       }
       return token;
     },
@@ -58,6 +69,8 @@ export const authOptions: NextAuthOptions = {
       if (token && session.user) {
         session.user.role = token.role as string;
         session.user.id = token.id as string;
+        session.user.organizationId = token.organizationId as string | null;
+        session.user.isActive = token.isActive as boolean;
       }
       return session;
     }

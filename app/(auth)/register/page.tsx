@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { toast } from "react-hot-toast";
+import { passwordRequirements, passwordFieldSchema } from "@/lib/validations/password";
 
 // ---------------------------------------------------------------------------
 // Validation schemas
@@ -61,12 +62,7 @@ const accountSchema = z
       .max(30, "Username is too long")
       .regex(/^[a-zA-Z0-9_. ]+$/, "Only letters, numbers, spaces, . and _ are allowed"),
     email: z.string().email("Invalid email address"),
-    password: z
-      .string()
-      .min(8, "At least 8 characters")
-      .regex(/[A-Z]/, "At least one uppercase letter")
-      .regex(/[0-9]/, "At least one number")
-      .regex(/[^A-Za-z0-9]/, "At least one symbol"),
+    password: passwordFieldSchema,
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -75,12 +71,7 @@ const accountSchema = z
   });
 type AccountValues = z.infer<typeof accountSchema>;
 
-const PASSWORD_REQUIREMENTS: { label: string; test: (v: string) => boolean }[] = [
-  { label: "At least 8 characters", test: (v) => v.length >= 8 },
-  { label: "One uppercase letter", test: (v) => /[A-Z]/.test(v) },
-  { label: "One number", test: (v) => /[0-9]/.test(v) },
-  { label: "One symbol", test: (v) => /[^A-Za-z0-9]/.test(v) },
-];
+const PASSWORD_REQUIREMENTS = passwordRequirements;
 
 const DRAFT_KEY = "registration-draft";
 

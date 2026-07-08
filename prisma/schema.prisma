@@ -18,33 +18,175 @@ model Platform {
 }
 
 model Organization {
-  id         String   @id @default(uuid())
-  name       String
-  logoURL    String?
-  platformId String
-  platform   Platform @relation(fields: [platformId], references: [id])
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  users      User[]
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  logoUrl     String?
+  platformId  String
+  platform    Platform @relation(fields: [platformId], references: [id])
+
+  workingDays      String @default("Mon,Tue,Wed,Thu,Fri")
+  shiftStartTime   String @default("09:00")
+  shiftEndTime     String @default("18:00")
+  lateGraceMinutes Int    @default(5)
+
+  employeeLeaveQuota    Int @default(20)
+  internLeaveQuota      Int @default(20)
+  contractualLeaveQuota Int @default(20)
+  employeeMonthlyCap    Int @default(5)
+  internMonthlyCap      Int @default(3)
+  contractualMonthlyCap Int @default(4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  locations   OrganizationLocation[]
+  users       User[]
+  holidays    Holiday[]
+  leaves      Leave[]
+  attendances Attendance[]
+}
+
+model OrganizationLocation {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  latitude       Float
+  longitude      Float
+  radiusMeters   Int          @default(100)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
 }
 
 model User {
   id             String        @id @default(uuid())
   email          String        @unique
   username       String
-  password       String
+  name           String?
+  password       String?
   role           Role          @default(USER)
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])
-  isVerified     Boolean       @default(false)
-  otp            String?
-  otpExpiry      DateTime?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+
+  userType    UserType   @default(EMPLOYEE)
+  isActive    Boolean    @default(true)
+  status      UserStatus @default(INVITED)
+  joiningDate DateTime?
+
+  photoUrl     String?
+  phoneNumber  String?
+  aadharNumber String? @unique
+  panNumber    String? @unique
+  dateOfBirth  DateTime?
+  resumeUrl    String?
+
+  baseLeaveQuota  Int @default(0)
+  extraLeaveQuota Int @default(0)
+
+  basicSalary Float?
+  hra         Float?
+  tdsPercent  Float?
+  pfPercent   Float?
+  lopEnabled  Boolean @default(true)
+
+  isVerified Boolean   @default(false)
+  otp        String?
+  otpExpiry  DateTime?
+
+  inviteToken       String?   @unique
+  inviteTokenExpiry DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leaves      Leave[]
+  attendances Attendance[]
+
+  @@index([organizationId])
+}
+
+model Leave {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startDate      DateTime     @db.Date
+  endDate        DateTime     @db.Date
+  reason         String?
+  status         LeaveStatus  @default(PENDING)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, status])
+  @@index([userId])
+}
+
+model Attendance {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date              DateTime  @db.Date
+  checkInTime       DateTime
+  checkInLatitude   Float?
+  checkInLongitude  Float?
+  checkOutTime      DateTime?
+  checkOutLatitude  Float?
+  checkOutLongitude Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([organizationId, date])
+}
+
+model Holiday {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  date           DateTime     @db.Date
+  type           HolidayType
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, name, date])
+  @@index([organizationId, date])
 }
 
 enum Role {
   SUPER_ADMIN
   ADMIN
   USER
+}
+
+enum UserType {
+  EMPLOYEE
+  INTERN
+  CONTRACTUAL
+}
+
+enum UserStatus {
+  INVITED
+  ACCEPTED
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum HolidayType {
+  NATIONAL
+  RELIGIOUS
+  CUSTOM
 }

@@ -5,6 +5,7 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { sendMail } from "@/lib/mail";
+import { otpEmailHtml } from "@/lib/email-templates";
 
 export async function POST(req: Request) {
   try {
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
     await sendMail({
       to: email,
       subject: "Verify your EMS Portal account",
-      html: `<p>Your verification code is: <strong>${otp}</strong></p><p>This code will expire in 10 minutes.</p>`
+      html: otpEmailHtml({ otp, intro: "Use the verification code below to activate your new EMS Portal account." }),
     });
 
     const { password: _, ...userWithoutPassword } = user;
