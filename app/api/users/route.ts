@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma"
 import { getSessionUser, canAccessOrganization } from "@/lib/api-auth"
 import { saveUploadedFile } from "@/lib/upload"
 import { generateInviteToken } from "@/lib/invite"
-import { sendMail } from "@/lib/mail"
+import { getMailBrandName, sendMail } from "@/lib/mail"
 import { inviteEmailHtml } from "@/lib/email-templates"
 
 export async function GET(request: Request) {
@@ -142,11 +142,18 @@ export async function POST(request: Request) {
     })
 
     const inviteLink = `${process.env.NEXT_PUBLIC_BASE_URL}/login?invite=${inviteToken}`
+    const brandName = await getMailBrandName()
     try {
       await sendMail({
         to: email,
-        subject: `You've been invited to join ${organization.name}`,
-        html: inviteEmailHtml({ name: name || undefined, organizationName: organization.name, inviteLink }),
+        subject: `You've been invited to join ${organization.name} on ${brandName}`,
+        html: inviteEmailHtml({
+          name: name || undefined,
+          organizationName: organization.name,
+          inviteLink,
+          brandName,
+        }),
+        fromName: brandName,
       })
     } catch (mailError) {
       console.error("Error sending invite email:", mailError)

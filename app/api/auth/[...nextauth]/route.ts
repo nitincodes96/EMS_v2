@@ -46,6 +46,7 @@ export const authOptions: NextAuthOptions = {
           id: user.id,
           email: user.email,
           name: user.username,
+          photoUrl: user.photoUrl,
           role: user.role,
           organizationId: user.organizationId,
         };
@@ -61,6 +62,7 @@ export const authOptions: NextAuthOptions = {
         token.role = user.role;
         token.id = user.id;
         token.organizationId = user.organizationId;
+        token.photoUrl = (user as { photoUrl?: string | null }).photoUrl ?? null;
         token.isActive = true;
       }
       return token;
@@ -70,6 +72,8 @@ export const authOptions: NextAuthOptions = {
         session.user.role = token.role as string;
         session.user.id = token.id as string;
         session.user.organizationId = token.organizationId as string | null;
+        session.user.photoUrl = token.photoUrl as string | null;
+        session.user.image = token.photoUrl as string | undefined;
         session.user.isActive = token.isActive as boolean;
       }
       return session;

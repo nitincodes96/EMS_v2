@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
-import { sendMail } from "@/lib/mail";
+import { getMailBrandName, sendMail } from "@/lib/mail";
 import { otpEmailHtml } from "@/lib/email-templates";
 
 export async function POST(req: Request) {
@@ -88,10 +88,17 @@ export async function POST(req: Request) {
       });
     });
 
+    const brandName = await getMailBrandName();
+
     await sendMail({
       to: email,
-      subject: "Verify your EMS Portal account",
-      html: otpEmailHtml({ otp, intro: "Use the verification code below to activate your new EMS Portal account." }),
+      subject: `Verify your ${brandName} account`,
+      html: otpEmailHtml({
+        otp,
+        intro: `Use the verification code below to activate your new ${brandName} account.`,
+        brandName,
+      }),
+      fromName: brandName,
     });
 
     const { password: _, ...userWithoutPassword } = user;

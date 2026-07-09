@@ -10,7 +10,12 @@ export async function GET() {
 
   const organization = await prisma.organization.findUnique({
     where: { id: sessionUser.organizationId },
-    include: { locations: true },
+    include: {
+      locations: true,
+      holidays: {
+        orderBy: { date: "asc" },
+      },
+    },
   })
 
   if (!organization) {
@@ -19,10 +24,22 @@ export async function GET() {
 
   return NextResponse.json({
     organization: {
+      id: organization.id,
       name: organization.name,
+      description: organization.description,
+      logoUrl: organization.logoUrl,
+      employeeLeaveQuota: organization.employeeLeaveQuota,
+      internLeaveQuota: organization.internLeaveQuota,
+      contractualLeaveQuota: organization.contractualLeaveQuota,
       shiftStartTime: organization.shiftStartTime,
       shiftEndTime: organization.shiftEndTime,
       workingDays: organization.workingDays,
+      holidays: organization.holidays.map((holiday) => ({
+        id: holiday.id,
+        name: holiday.name,
+        date: holiday.date,
+        type: holiday.type,
+      })),
       locations: organization.locations.map((l) => ({
         name: l.name,
         latitude: l.latitude,

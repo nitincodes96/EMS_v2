@@ -15,6 +15,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 
+import { EntityAvatar } from "@/components/shared/entity-avatar";
+
 import {
   Sidebar,
   SidebarContent,
@@ -129,42 +131,77 @@ export function AppSidebar({
   const pathname = usePathname();
   const { data: session, status } = useSession();
 
-  const [platformName, setPlatformName] = React.useState("EMS Portal");
-  const [logoUrl, setLogoUrl] = React.useState<string | null>(null);
+  const [brandName, setBrandName] = React.useState("EMS Portal");
+  const [brandDescription, setBrandDescription] = React.useState<string | null>(null);
+  const [brandLogoUrl, setBrandLogoUrl] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    const fetchPlatform = async () => {
-      try {
-        const res = await fetch("/api/platform-exists");
-        const data = await res.json();
+    let active = true;
 
-        if (data.name) {
-          setPlatformName(data.name);
-          document.title = data.name;
+    const applyBrand = (payload: {
+      name?: string | null;
+      description?: string | null;
+      logoUrl?: string | null;
+      logoURL?: string | null;
+    }) => {
+      if (!active) {
+        return;
+      }
+
+      const nextName = payload.name?.trim() || "EMS Portal";
+      const nextDescription = payload.description?.trim() || null;
+      const nextLogoUrl = payload.logoUrl ?? payload.logoURL ?? null;
+
+      setBrandName(nextName);
+      setBrandDescription(nextDescription);
+      setBrandLogoUrl(nextLogoUrl);
+
+      if (nextLogoUrl) {
+        let favicon = document.querySelector(
+          "link[rel*='icon']"
+        ) as HTMLLinkElement | null;
+
+        if (!favicon) {
+          favicon = document.createElement("link");
+          favicon.rel = "icon";
+          document.head.appendChild(favicon);
         }
 
-        if (data.logoURL) {
-          setLogoUrl(data.logoURL);
-
-          let favicon = document.querySelector(
-            "link[rel*='icon']"
-          ) as HTMLLinkElement | null;
-
-          if (!favicon) {
-            favicon = document.createElement("link");
-            favicon.rel = "icon";
-            document.head.appendChild(favicon);
-          }
-
-          favicon.href = data.logoURL;
-        }
-      } catch (error) {
-        console.error("Failed to fetch platform settings:", error);
+        favicon.href = nextLogoUrl;
       }
     };
 
-    fetchPlatform();
-  }, []);
+    const fetchBranding = async () => {
+      try {
+        const platformResponse = await fetch("/api/platform-exists");
+        const platformData = await platformResponse.json();
+        document.title = platformData?.name?.trim() || "EMS Portal";
+
+        const shouldUseOrganizationBranding = session?.user?.role === "ADMIN" || session?.user?.role === "USER";
+
+        if (shouldUseOrganizationBranding) {
+          const organizationResponse = await fetch("/api/organizations/me");
+          if (organizationResponse.ok) {
+            const organizationData = await organizationResponse.json();
+            if (organizationData?.organization) {
+              applyBrand(organizationData.organization);
+              return;
+            }
+          }
+        }
+
+        applyBrand(platformData);
+      } catch (error) {
+        console.error("Failed to fetch branding settings:", error);
+      }
+    };
+
+    void fetchBranding();
+
+    return () => {
+      active = false;
+    };
+  }, [session?.user?.role, status]);
 
   const role = (session?.user?.role || "USER") as keyof typeof NAV_ITEMS;
 
@@ -178,22 +215,26 @@ export function AppSidebar({
       {...props}
     >
       <SidebarHeader className="h-16 flex items-center border-b border-indigo-100 px-4 transition-all group-data-[collapsible=icon]:px-2">
-        <div className="flex w-full items-center gap-3 px-2 font-semibold text-indigo-900 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-200">
-            {logoUrl ? (
-              <img
-                src={logoUrl}
-                alt="Platform Logo"
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <Activity className="h-4 w-4" />
-            )}
-          </div>
+        <div className="flex w-full items-center gap-3 px-2 text-indigo-900 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+          <EntityAvatar
+            name={brandName}
+            fallbackText={brandName}
+            imageUrl={brandLogoUrl}
+            rounded="xl"
+            fit="contain"
+            className="h-10 w-10 shrink-0 border border-indigo-100 bg-white shadow-sm shadow-indigo-200"
+          />
 
-          <span className="truncate text-base tracking-tight group-data-[collapsible=icon]:hidden">
-            {platformName}
-          </span>
+          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+            <p className="truncate text-sm font-semibold leading-tight tracking-tight">
+              {brandName}
+            </p>
+            {brandDescription ? (
+              <p className="truncate text-xs text-slate-500">
+                {brandDescription}
+              </p>
+            ) : null}
+          </div>
         </div>
       </SidebarHeader>
 
@@ -254,7 +295,7 @@ export function AppSidebar({
             <SidebarMenuButton
               tooltip="Logout"
               onClick={() => signOut({ callbackUrl: "/login" })}
-              className="w-full rounded-xl px-3 py-5 text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
+              className="w-full rounded-xl px-3 py-5 text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600 cursor-pointer group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
             >
               <LogOut className="h-5 w-5 shrink-0 text-red-400" />
 

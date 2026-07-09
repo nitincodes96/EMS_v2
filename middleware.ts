@@ -65,7 +65,8 @@ export async function middleware(request: NextRequest) {
   }
 
   // If not authenticated and trying to access a protected route (anything other than login, register, verify)
-  if (!isAuthenticated && pathname !== "/login" && pathname !== "/verify") {
+  const publicUnauthenticatedPaths = ["/login", "/verify", "/forgot-password", "/reset-password"];
+  if (!isAuthenticated && !publicUnauthenticatedPaths.includes(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

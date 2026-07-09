@@ -14,7 +14,6 @@ import {
   ImagePlus,
   Layers,
   Lock,
-  ShieldCheck,
   Sparkles,
   Users,
   X,
@@ -26,6 +25,10 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { toast } from "react-hot-toast";
 import { passwordRequirements, passwordFieldSchema } from "@/lib/validations/password";
+import { BrandMark } from "@/components/auth/brand-mark";
+import { AuthShell } from "@/components/auth/auth-shell";
+
+const DEFAULT_BRAND_NAME = "EMS Portal";
 
 // ---------------------------------------------------------------------------
 // Validation schemas
@@ -198,17 +201,103 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white p-3 lg:p-4">
-      <div className="mx-auto grid min-h-[calc(100vh-2rem)] w-full max-w-6xl grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* ---------------- Left: form column ---------------- */}
-        <div className="flex flex-col justify-center px-4 py-10 sm:px-10">
-          <div className="mx-auto w-full max-w-sm">
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Create your workspace
-            </h1>
-            <p className="mt-1.5 text-sm text-slate-500">
-              Set up your organization, then your account.
+    <AuthShell
+      panel={
+        <>
+          <div className="relative z-10">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 backdrop-blur-md">
+              <Sparkles className="h-4 w-4 text-indigo-400" />
+              <p className="text-xs font-medium text-slate-300">EMS Portal v2.0</p>
+            </div>
+            <h2 className="mt-6 max-w-sm text-3xl font-light tracking-tight text-white lg:text-4xl">
+              Elevate your <span className="font-semibold text-indigo-400">workforce</span> management.
+            </h2>
+            <p className="mt-4 max-w-md text-slate-400">
+              Streamline HR tasks, engage your team, and scale your organization with our comprehensive suite of tools designed for modern enterprises.
             </p>
+          </div>
+
+          <div className="relative z-10 flex flex-1 items-center justify-center">
+            {/* Abstract UI representation */}
+            <div className="relative w-full max-w-sm">
+              {/* Main dashboard card */}
+              <div className="relative z-20 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-xl transition-transform hover:scale-105 duration-500">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 p-[1px]">
+                      <div className="h-full w-full rounded-full bg-slate-900 flex items-center justify-center overflow-hidden">
+                        {logoPreview ? (
+                          <img src={logoPreview} alt="Logo" className="h-full w-full object-cover" />
+                        ) : (
+                          <Activity className="h-4 w-4 text-white" />
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="h-3 w-24 rounded-full bg-slate-800 mb-2" />
+                      <div className="h-2 w-16 rounded-full bg-slate-800/60" />
+                    </div>
+                  </div>
+                  <div className="h-8 w-8 rounded-full border border-white/10 bg-slate-800/50 flex items-center justify-center">
+                    <Layers className="h-4 w-4 text-indigo-400" />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-center justify-between rounded-lg bg-white/5 p-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-2 w-2 rounded-full bg-indigo-500" />
+                        <div className="h-2 w-20 rounded-full bg-slate-700" />
+                      </div>
+                      <div className="h-2 w-8 rounded-full bg-slate-800" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Floating element 1 */}
+              <div className="absolute -right-8 -top-8 z-30 animate-pulse rounded-2xl border border-white/10 bg-slate-800/90 p-4 shadow-xl backdrop-blur-md">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20">
+                    <Lock className="h-5 w-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-200">System Secure</p>
+                    <p className="text-xs text-slate-400">All data encrypted</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Floating element 2 */}
+              <div className="absolute -bottom-6 -left-6 z-10 rounded-2xl border border-white/10 bg-indigo-500/20 p-4 shadow-xl backdrop-blur-md">
+                <div className="flex items-center gap-3">
+                  <div className="flex -space-x-3">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-8 w-8 rounded-full border-2 border-slate-900 bg-slate-800 flex items-center justify-center">
+                        <span className="text-[10px] text-slate-400">{i}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1.5 rounded-full bg-indigo-500/30 px-2 py-1">
+                    <Users className="h-3 w-3 text-indigo-300" />
+                    <span className="text-xs font-medium text-indigo-200">+120</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      }
+    >
+      <BrandMark platformName={DEFAULT_BRAND_NAME} logoUrl={logoPreview ?? null} />
+
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+        Create your workspace
+      </h1>
+      <p className="mt-1.5 text-sm text-slate-500">
+        Set up your Platform, then your account.
+      </p>
 
             <ol className="mb-8 mt-8 flex items-center gap-3">
               {[
@@ -273,7 +362,7 @@ export default function RegisterPage() {
                   <Label htmlFor="platformName">Platform name</Label>
                   <Input
                     id="platformName"
-                    placeholder="Acme Inc."
+                    placeholder="Enter Platform Name"
                     autoFocus
                     {...platformForm.register("platformName")}
                   />
@@ -470,102 +559,6 @@ export default function RegisterPage() {
                 </div>
               </form>
             )}
-          </div>
-        </div>
-
-        {/* ---------------- Right: premium illustration column ---------------- */}
-        <div className="relative hidden h-full overflow-hidden rounded-[32px] bg-slate-950 lg:flex lg:flex-col lg:justify-between lg:p-10 border border-slate-800">
-          <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-indigo-500/20 blur-3xl" />
-          <div className="pointer-events-none absolute bottom-0 left-0 h-96 w-96 rounded-full bg-violet-600/20 blur-3xl" />
-
-          {/* Subtle grid pattern */}
-          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
-
-          <div className="relative z-10">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 backdrop-blur-md">
-              <Sparkles className="h-4 w-4 text-indigo-400" />
-              <p className="text-xs font-medium text-slate-300">EMS Portal v2.0</p>
-            </div>
-            <h2 className="mt-6 max-w-sm text-3xl font-light tracking-tight text-white lg:text-4xl">
-              Elevate your <span className="font-semibold text-indigo-400">workforce</span> management.
-            </h2>
-            <p className="mt-4 max-w-md text-slate-400">
-              Streamline HR tasks, engage your team, and scale your organization with our comprehensive suite of tools designed for modern enterprises.
-            </p>
-          </div>
-
-          <div className="relative z-10 flex flex-1 items-center justify-center">
-            {/* Abstract UI representation */}
-            <div className="relative w-full max-w-sm">
-              {/* Main dashboard card */}
-              <div className="relative z-20 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-xl transition-transform hover:scale-105 duration-500">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 p-[1px]">
-                      <div className="h-full w-full rounded-full bg-slate-900 flex items-center justify-center overflow-hidden">
-                        {logoPreview ? (
-                          <img src={logoPreview} alt="Logo" className="h-full w-full object-cover" />
-                        ) : (
-                          <Activity className="h-4 w-4 text-white" />
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="h-3 w-24 rounded-full bg-slate-800 mb-2" />
-                      <div className="h-2 w-16 rounded-full bg-slate-800/60" />
-                    </div>
-                  </div>
-                  <div className="h-8 w-8 rounded-full border border-white/10 bg-slate-800/50 flex items-center justify-center">
-                    <Layers className="h-4 w-4 text-indigo-400" />
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="flex items-center justify-between rounded-lg bg-white/5 p-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-2 w-2 rounded-full bg-indigo-500" />
-                        <div className="h-2 w-20 rounded-full bg-slate-700" />
-                      </div>
-                      <div className="h-2 w-8 rounded-full bg-slate-800" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Floating element 1 */}
-              <div className="absolute -right-8 -top-8 z-30 animate-pulse rounded-2xl border border-white/10 bg-slate-800/90 p-4 shadow-xl backdrop-blur-md">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20">
-                    <Lock className="h-5 w-5 text-emerald-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-200">System Secure</p>
-                    <p className="text-xs text-slate-400">All data encrypted</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Floating element 2 */}
-              <div className="absolute -bottom-6 -left-6 z-10 rounded-2xl border border-white/10 bg-indigo-500/20 p-4 shadow-xl backdrop-blur-md">
-                <div className="flex items-center gap-3">
-                  <div className="flex -space-x-3">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-8 w-8 rounded-full border-2 border-slate-900 bg-slate-800 flex items-center justify-center">
-                        <span className="text-[10px] text-slate-400">{i}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-1.5 rounded-full bg-indigo-500/30 px-2 py-1">
-                    <Users className="h-3 w-3 text-indigo-300" />
-                    <span className="text-xs font-medium text-indigo-200">+120</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    </AuthShell>
   );
 }

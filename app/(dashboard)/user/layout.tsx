@@ -1,8 +1,8 @@
 "use client";
 
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
-import { UserAvatar } from "@/components/user-avatar";
+import { AppSidebar } from "@/components/dashboard/app-sidebar";
+import { UserAvatar } from "@/components/dashboard/user-avatar";
 import { OrgInfoPopover } from "@/components/shared/org-info-popover";
 import { SessionProvider } from "next-auth/react";
 

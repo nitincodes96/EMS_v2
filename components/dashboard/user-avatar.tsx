@@ -1,6 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
+import { EntityAvatar } from "@/components/shared/entity-avatar";
 
 function getInitials(name: string): string {
   return name
@@ -47,6 +48,7 @@ export function UserAvatar() {
 
   const username: string = (session.user as any).username ?? session.user.name ?? "User";
   const email: string = session.user.email ?? "";
+  const photoUrl = session.user.photoUrl ?? session.user.image ?? null;
   const initials = getInitials(username);
   const gradientClass = pickColor(username);
 
@@ -57,7 +59,16 @@ export function UserAvatar() {
         className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${gradientClass} text-white text-sm font-semibold shadow-md ring-2 ring-white select-none`}
         title={`${username} (${email})`}
       >
-        {initials}
+        {photoUrl ? (
+          <EntityAvatar
+            name={username}
+            fallbackText={email}
+            imageUrl={photoUrl}
+            className="h-full w-full rounded-full"
+          />
+        ) : (
+          initials
+        )}
         {/* Online indicator */}
         <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400 shadow-sm" />
       </div>

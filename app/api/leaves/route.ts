@@ -1,6 +1,93 @@
 import { NextResponse } from "next/server"
+import { differenceInCalendarDays, endOfYear, max, min, startOfYear } from "date-fns"
 import prisma from "@/lib/prisma"
 import { getSessionUser } from "@/lib/api-auth"
+
+function countLeaveDays(startDate: Date, endDate: Date) {
+  return differenceInCalendarDays(endDate, startDate) + 1
+}
+
+export async function GET() {
+  const sessionUser = await getSessionUser()
+  if (!sessionUser || !sessionUser.organizationId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: sessionUser.id },
+    select: {
+      id: true,
+      name: true,
+      username: true,
+      userType: true,
+      baseLeaveQuota: true,
+      extraLeaveQuota: true,
+      organizationId: true,
+    },
+  })
+
+  if (!user || user.organizationId !== sessionUser.organizationId) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 })
+  }
+
+  const totalQuota = user.baseLeaveQuota + user.extraLeaveQuota
+  const yearStart = startOfYear(new Date())
+  const yearEnd = endOfYear(new Date())
+
+  const approvedLeaves = await prisma.leave.findMany({
+    where: {
+      userId: user.id,
+      organizationId: sessionUser.organizationId,
+      status: "APPROVED",
+      startDate: { lte: yearEnd },
+      endDate: { gte: yearStart },
+    },
+    orderBy: { startDate: "desc" },
+  })
+
+  const pendingLeaves = await prisma.leave.count({
+    where: {
+      userId: user.id,
+      organizationId: sessionUser.organizationId,
+      status: "PENDING",
+    },
+  })
+
+  const upcomingLeaves = await prisma.leave.findMany({
+    where: {
+      userId: user.id,
+      organizationId: sessionUser.organizationId,
+      endDate: { gte: new Date() },
+      status: { in: ["PENDING", "APPROVED"] },
+    },
+    orderBy: { startDate: "asc" },
+    take: 4,
+  })
+
+  const usedLeaveDays = approvedLeaves.reduce((total, leave) => {
+    const overlapStart = max([leave.startDate, yearStart])
+    const overlapEnd = min([leave.endDate, yearEnd])
+    return total + Math.max(countLeaveDays(overlapStart, overlapEnd), 0)
+  }, 0)
+
+  const balance = Math.max(totalQuota - usedLeaveDays, 0)
+
+  return NextResponse.json({
+    summary: {
+      totalQuota,
+      usedLeaveDays,
+      balance,
+      pendingLeaves,
+    },
+    upcomingLeaves: upcomingLeaves.map((leave) => ({
+      id: leave.id,
+      type: leave.reason || "Leave request",
+      startDate: leave.startDate,
+      endDate: leave.endDate,
+      status: leave.status,
+    })),
+  })
+}
 
 export async function POST(request: Request) {
   const sessionUser = await getSessionUser()
