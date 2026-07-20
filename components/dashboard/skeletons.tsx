@@ -1,6 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton"
 
-export function OrganizationDetailSkeleton() {
+export function DepartmentDetailSkeleton() {
   return (
     <div className="space-y-4 p-1">
       <div className="flex items-center gap-3">

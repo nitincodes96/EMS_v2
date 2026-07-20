@@ -9,11 +9,11 @@ type HolidayInput = { name: string; date: string; type: "CUSTOM" | "RELIGIOUS" |
 
 export async function GET() {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || sessionUser.role !== "SUPER_ADMIN") {
+  if (!sessionUser || sessionUser.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
-  const organizations = await prisma.organization.findMany({
+  const departments = await prisma.department.findMany({
     include: {
       locations: true,
       _count: { select: { users: true, leaves: true, attendances: true } },
@@ -22,23 +22,23 @@ export async function GET() {
   })
 
   const adminCounts = await prisma.user.groupBy({
-    by: ["organizationId", "role"],
-    where: { organizationId: { in: organizations.map((o) => o.id) }, role: { in: ["ADMIN", "USER"] } },
+    by: ["departmentId", "role"],
+    where: { departmentId: { in: departments.map((o) => o.id) }, role: { in: ["FACULTY", "PROJECT_ASSISTANT"] } },
     _count: { _all: true },
   })
 
-  const result = organizations.map((org) => {
-    const adminCount = adminCounts.find((c) => c.organizationId === org.id && c.role === "ADMIN")?._count._all ?? 0
-    const userCount = adminCounts.find((c) => c.organizationId === org.id && c.role === "USER")?._count._all ?? 0
+  const result = departments.map((org) => {
+    const adminCount = adminCounts.find((c) => c.departmentId === org.id && c.role === "FACULTY")?._count._all ?? 0
+    const userCount = adminCounts.find((c) => c.departmentId === org.id && c.role === "PROJECT_ASSISTANT")?._count._all ?? 0
     return { ...org, adminCount, userCount }
   })
 
-  return NextResponse.json({ organizations: result })
+  return NextResponse.json({ departments: result })
 }
 
 export async function POST(request: Request) {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || sessionUser.role !== "SUPER_ADMIN") {
+  if (!sessionUser || sessionUser.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
 
     const name = String(formData.get("name") || "").trim()
     if (!name) {
-      return NextResponse.json({ error: "Organization name is required" }, { status: 400 })
+      return NextResponse.json({ error: "Department name is required" }, { status: 400 })
     }
 
     const description = (formData.get("description") as string) || null
@@ -82,9 +82,9 @@ export async function POST(request: Request) {
       }
     }
 
-    const platform = await prisma.platform.findFirst()
-    if (!platform) {
-      return NextResponse.json({ error: "No platform is registered" }, { status: 400 })
+    const organization = await prisma.organization.findFirst()
+    if (!organization) {
+      return NextResponse.json({ error: "No organization is registered" }, { status: 400 })
     }
 
     const slug = await generateUniqueOrgSlug(name)
@@ -92,16 +92,16 @@ export async function POST(request: Request) {
     let logoUrl: string | null = null
     const logo = formData.get("logo") as File | null
     if (logo && logo.size > 0) {
-      logoUrl = await saveUploadedFile(logo, "organizations")
+      logoUrl = await saveUploadedFile(logo, "departments")
     }
 
-    const organization = await prisma.organization.create({
+    const department = await prisma.department.create({
       data: {
         name,
         slug,
         description,
         logoUrl,
-        platformId: platform.id,
+        organizationId: organization.id,
         workingDays,
         shiftStartTime,
         shiftEndTime,
@@ -135,9 +135,9 @@ export async function POST(request: Request) {
       include: { locations: true },
     })
 
-    return NextResponse.json({ organization }, { status: 201 })
+    return NextResponse.json({ department }, { status: 201 })
   } catch (error) {
-    console.error("Error creating organization:", error)
-    return NextResponse.json({ error: "Failed to create organization" }, { status: 500 })
+    console.error("Error creating department:", error)
+    return NextResponse.json({ error: "Failed to create department" }, { status: 500 })
   }
 }

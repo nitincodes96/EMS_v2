@@ -48,7 +48,7 @@ export const authOptions: NextAuthOptions = {
           name: user.username,
           photoUrl: user.photoUrl,
           role: user.role,
-          organizationId: user.organizationId,
+          departmentId: user.departmentId,
         };
       }
     })
@@ -61,7 +61,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = user.role;
         token.id = user.id;
-        token.organizationId = user.organizationId;
+        token.departmentId = user.departmentId;
         token.photoUrl = (user as { photoUrl?: string | null }).photoUrl ?? null;
         token.isActive = true;
       }
@@ -71,7 +71,7 @@ export const authOptions: NextAuthOptions = {
       if (token && session.user) {
         session.user.role = token.role as string;
         session.user.id = token.id as string;
-        session.user.organizationId = token.organizationId as string | null;
+        session.user.departmentId = token.departmentId as string | null;
         session.user.photoUrl = token.photoUrl as string | null;
         session.user.image = token.photoUrl as string | undefined;
         session.user.isActive = token.isActive as boolean;

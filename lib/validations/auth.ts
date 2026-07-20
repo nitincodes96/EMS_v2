@@ -1,11 +1,11 @@
 import * as z from "zod";
 
-export const organizationSchema = z.object({
-  organizationName: z.string().min(1, "Organization name is required"),
+export const departmentSchema = z.object({
+  departmentName: z.string().min(1, "Department name is required"),
   logo: z.any().optional(),
 });
 
-export type OrganizationValues = z.infer<typeof organizationSchema>;
+export type DepartmentValues = z.infer<typeof departmentSchema>;
 
 export const accountSchema = z.object({
   username: z.string().min(1, "Username is required"),

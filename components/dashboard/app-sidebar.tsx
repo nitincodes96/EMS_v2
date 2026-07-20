@@ -30,49 +30,16 @@ import {
 } from "@/components/ui/sidebar";
 
 const NAV_ITEMS = {
-  SUPER_ADMIN: [
-    {
-      title: "Dashboard",
-      url: "/super-admin/dashboard",
-      icon: LayoutDashboard,
-    },
-    {
-      title: "Organizations",
-      url: "/super-admin/organizations",
-      icon: Building2,
-    },
-    {
-      title: "Users",
-      url: "/super-admin/users",
-      icon: Users,
-    },
-    {
-      title: "Attendance",
-      url: "/super-admin/attendance",
-      icon: Watch,
-    },
-    {
-      title: "Leave",
-      url: "/super-admin/leave",
-      icon: Calendar,
-    },
-    {
-      title: "System Logs",
-      url: "/super-admin/logs",
-      icon: Activity,
-    },
-    {
-      title: "Settings",
-      url: "/super-admin/settings",
-      icon: Settings,
-    },
-  ],
-
   ADMIN: [
     {
       title: "Dashboard",
       url: "/admin/dashboard",
       icon: LayoutDashboard,
+    },
+    {
+      title: "Departments",
+      url: "/admin/departments",
+      icon: Building2,
     },
     {
       title: "Users",
@@ -83,11 +50,6 @@ const NAV_ITEMS = {
       title: "Attendance",
       url: "/admin/attendance",
       icon: Watch,
-    },
-    {
-      title: "Leave",
-      url: "/admin/leave",
-      icon: Calendar,
     },
     {
       title: "System Logs",
@@ -101,25 +63,58 @@ const NAV_ITEMS = {
     },
   ],
 
-  USER: [
+  FACULTY: [
     {
       title: "Dashboard",
-      url: "/user/dashboard",
+      url: "/faculty/dashboard",
       icon: LayoutDashboard,
     },
     {
+      title: "Users",
+      url: "/faculty/users",
+      icon: Users,
+    },
+    {
       title: "Attendance",
-      url: "/user/attendance",
+      url: "/faculty/attendance",
       icon: Watch,
     },
     {
       title: "Leave",
-      url: "/user/leave",
+      url: "/faculty/leave",
+      icon: Calendar,
+    },
+    {
+      title: "System Logs",
+      url: "/faculty/logs",
+      icon: Activity,
+    },
+    {
+      title: "Settings",
+      url: "/faculty/settings",
+      icon: Settings,
+    },
+  ],
+
+  PROJECT_ASSISTANT: [
+    {
+      title: "Dashboard",
+      url: "/project-assistant/dashboard",
+      icon: LayoutDashboard,
+    },
+    {
+      title: "Attendance",
+      url: "/project-assistant/attendance",
+      icon: Watch,
+    },
+    {
+      title: "Leave",
+      url: "/project-assistant/leave",
       icon: Calendar,
     },
     {
       title: "Settings",
-      url: "/user/settings",
+      url: "/project-assistant/settings",
       icon: Settings,
     },
   ],
@@ -173,24 +168,24 @@ export function AppSidebar({
 
     const fetchBranding = async () => {
       try {
-        const platformResponse = await fetch("/api/platform-exists");
-        const platformData = await platformResponse.json();
-        document.title = platformData?.name?.trim() || "EMS Portal";
+        const organizationResponse = await fetch("/api/organization-exists");
+        const organizationData = await organizationResponse.json();
+        document.title = organizationData?.name?.trim() || "EMS Portal";
 
-        const shouldUseOrganizationBranding = session?.user?.role === "ADMIN" || session?.user?.role === "USER";
+        const shouldUseDepartmentBranding = session?.user?.role === "FACULTY" || session?.user?.role === "PROJECT_ASSISTANT";
 
-        if (shouldUseOrganizationBranding) {
-          const organizationResponse = await fetch("/api/organizations/me");
-          if (organizationResponse.ok) {
-            const organizationData = await organizationResponse.json();
-            if (organizationData?.organization) {
-              applyBrand(organizationData.organization);
+        if (shouldUseDepartmentBranding) {
+          const departmentResponse = await fetch("/api/departments/me");
+          if (departmentResponse.ok) {
+            const departmentData = await departmentResponse.json();
+            if (departmentData?.department) {
+              applyBrand(departmentData.department);
               return;
             }
           }
         }
 
-        applyBrand(platformData);
+        applyBrand(organizationData);
       } catch (error) {
         console.error("Failed to fetch branding settings:", error);
       }
@@ -203,9 +198,9 @@ export function AppSidebar({
     };
   }, [session?.user?.role, status]);
 
-  const role = (session?.user?.role || "USER") as keyof typeof NAV_ITEMS;
+  const role = (session?.user?.role || "PROJECT_ASSISTANT") as keyof typeof NAV_ITEMS;
 
-  const navItems = NAV_ITEMS[role] ?? NAV_ITEMS.USER;
+  const navItems = NAV_ITEMS[role] ?? NAV_ITEMS.PROJECT_ASSISTANT;
 
   return (
     <Sidebar

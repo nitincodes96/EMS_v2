@@ -19,21 +19,21 @@ const geistMono = Geist_Mono({
 import prisma from "@/lib/prisma";
 
 export async function generateMetadata(): Promise<Metadata> {
-  let platformName = "Employee Management System";
+  let organizationName = "Employee Management System";
   let logoUrl = "/favicon.ico";
   try {
-    const platform = await prisma.platform.findFirst();
-    if (platform?.name) {
-      platformName = platform.name;
+    const organization = await prisma.organization.findFirst();
+    if (organization?.name) {
+      organizationName = organization.name;
     }
-    if (platform?.logoURL) {
-      logoUrl = platform.logoURL;
+    if (organization?.logoURL) {
+      logoUrl = organization.logoURL;
     }
   } catch (error) {
-    console.error("Failed to load platform info:", error);
+    console.error("Failed to load organization info:", error);
   }
   return {
-    title: platformName,
+    title: organizationName,
     description: "This is an employee management system.",
     icons: {
       icon: logoUrl,

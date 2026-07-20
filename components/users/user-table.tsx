@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button"
 import { Pencil } from "lucide-react"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
-import type { User, Organization } from "@/types"
+import type { User, Department } from "@/types"
 
 function getUserTypeBadge(userType: string) {
   switch (userType) {
@@ -40,7 +40,7 @@ export function UserTable({
 }: {
   users: User[]
   mode: "super-admin" | "admin"
-  organizations?: Organization[]
+  departments?: Department[]
   onEditUser?: (user: User) => void
   onUserUpdated: () => void
   attendanceLinkPrefix: string
@@ -82,7 +82,7 @@ export function UserTable({
           <TableHeader>
             <TableRow>
               <TableHead className="pl-4">Member</TableHead>
-              {mode === "super-admin" && <TableHead>Organization</TableHead>}
+              {mode === "super-admin" && <TableHead>Department</TableHead>}
               <TableHead>Role</TableHead>
               <TableHead className="hidden sm:table-cell">Type</TableHead>
               <TableHead className="hidden sm:table-cell">Invite</TableHead>
@@ -113,7 +113,7 @@ export function UserTable({
                     </div>
                   </TableCell>
                   {mode === "super-admin" && (
-                    <TableCell className="text-xs text-slate-600">{user.organization?.name || "—"}</TableCell>
+                    <TableCell className="text-xs text-slate-600">{user.department?.name || "—"}</TableCell>
                   )}
                   <TableCell>
                     <Select value={user.role} onValueChange={(v) => v && handleToggleRole(user.id, v)}>
@@ -121,8 +121,8 @@ export function UserTable({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="USER">User</SelectItem>
-                        <SelectItem value="ADMIN">Admin</SelectItem>
+                        <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
+                        <SelectItem value="FACULTY">Faculty</SelectItem>
                       </SelectContent>
                     </Select>
                   </TableCell>

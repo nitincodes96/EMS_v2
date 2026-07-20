@@ -8,23 +8,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Platform {
-  id            String         @id @default(uuid())
+model Organization {
+  id            String       @id @default(uuid())
   name          String
   logoURL       String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  organizations Organization[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  departments   Department[]
 }
 
-model Organization {
-  id          String   @id @default(uuid())
-  name        String
-  slug        String   @unique
-  description String?
-  logoUrl     String?
-  platformId  String
-  platform    Platform @relation(fields: [platformId], references: [id])
+model Department {
+  id             String       @id @default(uuid())
+  name           String
+  slug           String       @unique
+  description    String?
+  logoUrl        String?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
 
   workingDays      String @default("Mon,Tue,Wed,Thu,Fri")
   shiftStartTime   String @default("09:00")
@@ -41,36 +41,36 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  locations   OrganizationLocation[]
+  locations   DepartmentLocation[]
   users       User[]
   holidays    Holiday[]
   leaves      Leave[]
   attendances Attendance[]
 }
 
-model OrganizationLocation {
-  id             String       @id @default(uuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name           String
-  latitude       Float
-  longitude      Float
-  radiusMeters   Int          @default(100)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+model DepartmentLocation {
+  id           String     @id @default(uuid())
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  name         String
+  latitude     Float
+  longitude    Float
+  radiusMeters Int        @default(100)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  @@index([organizationId])
+  @@index([departmentId])
 }
 
 model User {
-  id             String        @id @default(uuid())
-  email          String        @unique
-  username       String
-  name           String?
-  password       String?
-  role           Role          @default(USER)
-  organizationId String?
-  organization   Organization? @relation(fields: [organizationId], references: [id])
+  id           String      @id @default(uuid())
+  email        String      @unique
+  username     String
+  name         String?
+  password     String?
+  role         Role        @default(PROJECT_ASSISTANT)
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
 
   userType    UserType   @default(EMPLOYEE)
   isActive    Boolean    @default(true)
@@ -109,32 +109,32 @@ model User {
   leaves      Leave[]
   attendances Attendance[]
 
-  @@index([organizationId])
+  @@index([departmentId])
 }
 
 model Leave {
-  id             String       @id @default(uuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  userId         String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  startDate      DateTime     @db.Date
-  endDate        DateTime     @db.Date
-  reason         String?
-  status         LeaveStatus  @default(PENDING)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id           String      @id @default(uuid())
+  departmentId String
+  department   Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startDate    DateTime    @db.Date
+  endDate      DateTime    @db.Date
+  reason       String?
+  status       LeaveStatus @default(PENDING)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  @@index([organizationId, status])
+  @@index([departmentId, status])
   @@index([userId])
 }
 
 model Attendance {
-  id             String       @id @default(uuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  userId         String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String     @id @default(uuid())
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   date              DateTime  @db.Date
   checkInTime       DateTime
@@ -148,27 +148,27 @@ model Attendance {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, date])
-  @@index([organizationId, date])
+  @@index([departmentId, date])
 }
 
 model Holiday {
-  id             String       @id @default(uuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name           String
-  date           DateTime     @db.Date
-  type           HolidayType
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id           String      @id @default(uuid())
+  departmentId String
+  department   Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  name         String
+  date         DateTime    @db.Date
+  type         HolidayType
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  @@unique([organizationId, name, date])
-  @@index([organizationId, date])
+  @@unique([departmentId, name, date])
+  @@index([departmentId, date])
 }
 
 enum Role {
-  SUPER_ADMIN
   ADMIN
-  USER
+  FACULTY
+  PROJECT_ASSISTANT
 }
 
 enum UserType {

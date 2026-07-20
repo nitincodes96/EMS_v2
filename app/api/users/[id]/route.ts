@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
-import { getSessionUser, canAccessOrganization } from "@/lib/api-auth"
+import { getSessionUser, canAccessDepartment } from "@/lib/api-auth"
 import { saveUploadedFile } from "@/lib/upload"
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || (sessionUser.role !== "SUPER_ADMIN" && sessionUser.role !== "ADMIN")) {
+  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -15,7 +15,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!target) {
     return NextResponse.json({ error: "User not found" }, { status: 404 })
   }
-  if (target.role === "SUPER_ADMIN" || !target.organizationId || !canAccessOrganization(sessionUser, target.organizationId)) {
+  if (target.role === "ADMIN" || !target.departmentId || !canAccessDepartment(sessionUser, target.departmentId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -31,12 +31,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         return NextResponse.json({ user: rest })
       }
 
-      if (body.role === "USER" || body.role === "ADMIN") {
+      if (body.role === "PROJECT_ASSISTANT" || body.role === "FACULTY") {
         const updated = await prisma.user.update({
           where: { id },
           data: {
             role: body.role,
-            userType: body.role === "ADMIN" ? "EMPLOYEE" : target.userType,
+            userType: body.role === "FACULTY" ? "EMPLOYEE" : target.userType,
           },
         })
         const { password: _p, ...rest } = updated
@@ -53,7 +53,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const name = formData.get("name") as string | null
     const roleRaw = formData.get("role") as string | null
     const userTypeRaw = formData.get("userType") as string | null
-    const organizationIdRaw = formData.get("organizationId") as string | null
+    const departmentIdRaw = formData.get("departmentId") as string | null
     const phoneNumber = formData.get("phoneNumber") as string | null
     const aadharNumber = formData.get("aadharNumber") as string | null
     const panNumber = formData.get("panNumber") as string | null
@@ -66,18 +66,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const email = emailRaw?.trim().toLowerCase() ?? null
     const resolvedName = name !== null ? name.trim() : null
-    const resolvedOrganizationId = organizationIdRaw !== null ? organizationIdRaw.trim() || target.organizationId || null : target.organizationId
+    const resolvedDepartmentId = departmentIdRaw !== null ? departmentIdRaw.trim() || target.departmentId || null : target.departmentId
 
-    if (resolvedOrganizationId && !canAccessOrganization(sessionUser, resolvedOrganizationId)) {
+    if (resolvedDepartmentId && !canAccessDepartment(sessionUser, resolvedDepartmentId)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    const organization = resolvedOrganizationId
-      ? await prisma.organization.findUnique({ where: { id: resolvedOrganizationId } })
+    const department = resolvedDepartmentId
+      ? await prisma.department.findUnique({ where: { id: resolvedDepartmentId } })
       : null
 
-    if (resolvedOrganizationId && !organization) {
-      return NextResponse.json({ error: "Organization not found" }, { status: 404 })
+    if (resolvedDepartmentId && !department) {
+      return NextResponse.json({ error: "Department not found" }, { status: 404 })
     }
 
     if (email && email !== target.email) {
@@ -88,21 +88,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     let role = roleRaw && roleRaw !== "" ? roleRaw : target.role
-    if (role === "SUPER_ADMIN") role = "USER"
+    if (role === "ADMIN") role = "PROJECT_ASSISTANT"
 
     let userType =
-      role === "ADMIN"
+      role === "FACULTY"
         ? "EMPLOYEE"
         : userTypeRaw && ["EMPLOYEE", "INTERN", "CONTRACTUAL"].includes(userTypeRaw)
           ? (userTypeRaw as "EMPLOYEE" | "INTERN" | "CONTRACTUAL")
           : target.userType
 
-    const baseLeaveQuota = organization
+    const baseLeaveQuota = department
       ? userType === "INTERN"
-        ? organization.internLeaveQuota
+        ? department.internLeaveQuota
         : userType === "CONTRACTUAL"
-          ? organization.contractualLeaveQuota
-          : organization.employeeLeaveQuota
+          ? department.contractualLeaveQuota
+          : department.employeeLeaveQuota
       : target.baseLeaveQuota
 
     let photoUrl: string | undefined
@@ -123,9 +123,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         ...(email !== null ? { email } : {}),
         username: (resolvedName || email?.split("@")[0] || target.username).trim(),
         ...(resolvedName !== null ? { name: resolvedName || null } : {}),
-        ...(role ? { role: role as "ADMIN" | "USER" } : {}),
+        ...(role ? { role: role as "FACULTY" | "PROJECT_ASSISTANT" } : {}),
         ...(userType ? { userType } : {}),
-        ...(organizationIdRaw !== null ? { organizationId: resolvedOrganizationId } : {}),
+        ...(departmentIdRaw !== null ? { departmentId: resolvedDepartmentId } : {}),
         ...(phoneNumber !== null ? { phoneNumber } : {}),
         ...(aadharNumber !== null ? { aadharNumber: aadharNumber || null } : {}),
         ...(panNumber !== null ? { panNumber: panNumber || null } : {}),
@@ -137,7 +137,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         ...(lopEnabledRaw !== null ? { lopEnabled: lopEnabledRaw !== "false" } : {}),
         ...(photoUrl ? { photoUrl } : {}),
         ...(resumeUrl ? { resumeUrl } : {}),
-        ...(organization ? { baseLeaveQuota } : {}),
+        ...(department ? { baseLeaveQuota } : {}),
       },
     })
 

@@ -1,4 +1,4 @@
-export interface Organization {
+export interface Department {
   id: string
   name: string
   slug?: string
@@ -19,14 +19,14 @@ export interface User {
   tdsPercent?: number | null
   pfPercent?: number | null
   lopEnabled?: boolean
-  role: "USER" | "ADMIN" | "SUPER_ADMIN"
+  role: "PROJECT_ASSISTANT" | "FACULTY" | "ADMIN"
   userType: "EMPLOYEE" | "INTERN" | "CONTRACTUAL"
   isActive: boolean
   status: "INVITED" | "ACCEPTED"
   baseLeaveQuota: number
   extraLeaveQuota: number
   joiningDate?: string | null
-  organizationId: string | null
-  organization?: Organization | null
+  departmentId: string | null
+  department?: Department | null
   createdAt: string
 }

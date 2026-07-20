@@ -30,9 +30,9 @@ export function OrgInfoPopover() {
     setFetched(true)
     setLoading(true)
     try {
-      const res = await fetch("/api/organizations/me")
+      const res = await fetch("/api/departments/me")
       const data = await res.json()
-      if (res.ok) setInfo(data.organization)
+      if (res.ok) setInfo(data.department)
       else setError(true)
     } catch {
       setError(true)
@@ -47,7 +47,7 @@ export function OrgInfoPopover() {
         delay={0}
         closeDelay={0}
         className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-        aria-label="Organization info"
+        aria-label="Department info"
       >
         <Info className="h-4.5 w-4.5" />
       </PreviewCard.Trigger>
@@ -64,7 +64,7 @@ export function OrgInfoPopover() {
                 <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
               </div>
             ) : error || !info ? (
-              <p className="text-xs text-slate-400">Organization info unavailable.</p>
+              <p className="text-xs text-slate-400">Department info unavailable.</p>
             ) : (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">

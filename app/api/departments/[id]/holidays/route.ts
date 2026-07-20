@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import prisma from "@/lib/prisma"
-import { getSessionUser, canAccessOrganization } from "@/lib/api-auth"
+import { getSessionUser, canAccessDepartment } from "@/lib/api-auth"
 
 const VALID_TYPES = ["NATIONAL", "RELIGIOUS", "CUSTOM"]
 
@@ -12,7 +12,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params
-  if (!canAccessOrganization(sessionUser, id)) {
+  if (!canAccessDepartment(sessionUser, id)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -26,7 +26,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     const holiday = await prisma.holiday.create({
-      data: { organizationId: id, name, date: new Date(date), type: typeUpper as "NATIONAL" | "RELIGIOUS" | "CUSTOM" },
+      data: { departmentId: id, name, date: new Date(date), type: typeUpper as "NATIONAL" | "RELIGIOUS" | "CUSTOM" },
     })
 
     return NextResponse.json({ holiday }, { status: 201 })

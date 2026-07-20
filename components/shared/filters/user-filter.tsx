@@ -37,7 +37,7 @@ function FilterBlock({
 
 export function UserFilter({
   showOrgFilter = false,
-  organizations = [],
+  departments = [],
   filterOrg,
   filterRole,
   filterUserType,
@@ -52,7 +52,7 @@ export function UserFilter({
   exportFilename,
 }: {
   showOrgFilter?: boolean
-  organizations?: { id: string; name: string }[]
+  departments?: { id: string; name: string }[]
   filterOrg?: string
   filterRole: string
   filterUserType: string
@@ -80,14 +80,14 @@ export function UserFilter({
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {showOrgFilter && (
-        <FilterBlock label="Organization">
+        <FilterBlock label="Department">
           <Select value={filterOrg ?? "all"} onValueChange={(v) => v && onOrgChange?.(v)}>
             <SelectTrigger className="h-7 w-32 text-[11px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Organizations</SelectItem>
-              {organizations.map((org) => (
+              <SelectItem value="all">All Departments</SelectItem>
+              {departments.map((org) => (
                 <SelectItem key={org.id} value={org.id}>
                   {org.name}
                 </SelectItem>
@@ -103,8 +103,8 @@ export function UserFilter({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Roles</SelectItem>
-            <SelectItem value="USER">User</SelectItem>
-            <SelectItem value="ADMIN">Admin</SelectItem>
+            <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
+            <SelectItem value="FACULTY">Faculty</SelectItem>
           </SelectContent>
         </Select>
       </FilterBlock>

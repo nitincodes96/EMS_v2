@@ -57,12 +57,12 @@ export function otpEmailHtml({
 
 export function inviteEmailHtml({
   name,
-  organizationName,
+  departmentName,
   inviteLink,
   brandName = "EMS Portal",
 }: {
   name?: string
-  organizationName: string
+  departmentName: string
   inviteLink: string
   brandName?: string
 }): string {
@@ -74,7 +74,7 @@ export function inviteEmailHtml({
         Hi ${name ? `<strong>${name}</strong>` : "there"},
       </p>
       <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#475569;">
-        You've been invited to join <strong style="color:#0f172a;">${organizationName}</strong> on ${brandName}. Click the button below to accept your invite and set up your password.
+        You've been invited to join <strong style="color:#0f172a;">${departmentName}</strong> on ${brandName}. Click the button below to accept your invite and set up your password.
       </p>
       <div style="text-align:center;margin:0 0 24px;">
         <a href="${inviteLink}" style="display:inline-block;padding:12px 28px;border-radius:10px;background-color:#4f46e5;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">

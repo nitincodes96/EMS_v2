@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
-import { getSessionUser, canAccessOrganization } from "@/lib/api-auth"
+import { getSessionUser, canAccessDepartment } from "@/lib/api-auth"
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || (sessionUser.role !== "SUPER_ADMIN" && sessionUser.role !== "ADMIN")) {
+  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -14,7 +14,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!leave) {
     return NextResponse.json({ error: "Leave not found" }, { status: 404 })
   }
-  if (!canAccessOrganization(sessionUser, leave.organizationId)) {
+  if (!canAccessDepartment(sessionUser, leave.departmentId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
-import { getSessionUser, canAccessOrganization } from "@/lib/api-auth"
+import { getSessionUser, canAccessDepartment } from "@/lib/api-auth"
 import { saveUploadedFile } from "@/lib/upload"
 import { generateInviteToken } from "@/lib/invite"
 import { getMailBrandName, sendMail } from "@/lib/mail"
@@ -8,22 +8,22 @@ import { inviteEmailHtml } from "@/lib/email-templates"
 
 export async function GET(request: Request) {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || (sessionUser.role !== "SUPER_ADMIN" && sessionUser.role !== "ADMIN")) {
+  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
   const { searchParams } = new URL(request.url)
-  const organizationIdParam = searchParams.get("organizationId")
+  const departmentIdParam = searchParams.get("departmentId")
   const role = searchParams.get("role")
   const userType = searchParams.get("userType")
   const excludeUserId = searchParams.get("excludeUserId")
 
-  const where: Record<string, unknown> = { role: { not: "SUPER_ADMIN" } }
+  const where: Record<string, unknown> = { role: { not: "ADMIN" } }
 
-  if (sessionUser.role === "ADMIN") {
-    where.organizationId = sessionUser.organizationId
-  } else if (organizationIdParam && organizationIdParam !== "all") {
-    where.organizationId = organizationIdParam
+  if (sessionUser.role === "FACULTY") {
+    where.departmentId = sessionUser.departmentId
+  } else if (departmentIdParam && departmentIdParam !== "all") {
+    where.departmentId = departmentIdParam
   }
 
   if (role) where.role = role
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 
   const users = await prisma.user.findMany({
     where,
-    include: { organization: { select: { id: true, name: true } } },
+    include: { department: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },
   })
 
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || (sessionUser.role !== "SUPER_ADMIN" && sessionUser.role !== "ADMIN")) {
+  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -52,19 +52,19 @@ export async function POST(request: Request) {
 
     const email = String(formData.get("email") || "").trim().toLowerCase()
     const name = String(formData.get("name") || "").trim()
-    const organizationId = String(formData.get("organizationId") || "")
+    const departmentId = String(formData.get("departmentId") || "")
 
-    if (!email || !organizationId) {
-      return NextResponse.json({ error: "Email and organization are required" }, { status: 400 })
+    if (!email || !departmentId) {
+      return NextResponse.json({ error: "Email and department are required" }, { status: 400 })
     }
 
-    if (!canAccessOrganization(sessionUser, organizationId)) {
+    if (!canAccessDepartment(sessionUser, departmentId)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    const organization = await prisma.organization.findUnique({ where: { id: organizationId } })
-    if (!organization) {
-      return NextResponse.json({ error: "Organization not found" }, { status: 404 })
+    const department = await prisma.department.findUnique({ where: { id: departmentId } })
+    if (!department) {
+      return NextResponse.json({ error: "Department not found" }, { status: 404 })
     }
 
     const existing = await prisma.user.findUnique({ where: { email } })
@@ -72,11 +72,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "A user with this email already exists" }, { status: 400 })
     }
 
-    let role = String(formData.get("role") || "USER")
-    if (role === "SUPER_ADMIN") role = "USER"
+    let role = String(formData.get("role") || "PROJECT_ASSISTANT")
+    if (role === "ADMIN") role = "PROJECT_ASSISTANT"
 
     let userType = String(formData.get("userType") || "EMPLOYEE") as "EMPLOYEE" | "INTERN" | "CONTRACTUAL"
-    if (role === "ADMIN") userType = "EMPLOYEE"
+    if (role === "FACULTY") userType = "EMPLOYEE"
 
     const phoneNumber = (formData.get("phoneNumber") as string) || null
     const aadharNumber = (formData.get("aadharNumber") as string) || null
@@ -92,10 +92,10 @@ export async function POST(request: Request) {
 
     const baseLeaveQuota =
       userType === "INTERN"
-        ? organization.internLeaveQuota
+        ? department.internLeaveQuota
         : userType === "CONTRACTUAL"
-        ? organization.contractualLeaveQuota
-        : organization.employeeLeaveQuota
+        ? department.contractualLeaveQuota
+        : department.employeeLeaveQuota
 
     const username = name || email.split("@")[0]
 
@@ -119,9 +119,9 @@ export async function POST(request: Request) {
         username,
         name: name || null,
         password: null,
-        role: role as "ADMIN" | "USER",
+        role: role as "FACULTY" | "PROJECT_ASSISTANT",
         userType,
-        organizationId,
+        departmentId,
         isVerified: true,
         status: "INVITED",
         inviteToken,
@@ -146,10 +146,10 @@ export async function POST(request: Request) {
     try {
       await sendMail({
         to: email,
-        subject: `You've been invited to join ${organization.name} on ${brandName}`,
+        subject: `You've been invited to join ${department.name} on ${brandName}`,
         html: inviteEmailHtml({
           name: name || undefined,
-          organizationName: organization.name,
+          departmentName: department.name,
           inviteLink,
           brandName,
         }),

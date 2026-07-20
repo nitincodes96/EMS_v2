@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import prisma from "@/lib/prisma"
-import { getSessionUser, canAccessOrganization } from "@/lib/api-auth"
+import { getSessionUser, canAccessDepartment } from "@/lib/api-auth"
 
 const VALID_TYPES = ["NATIONAL", "RELIGIOUS", "CUSTOM"]
 
@@ -15,12 +15,12 @@ export async function PATCH(
   }
 
   const { id, holidayId } = await params
-  if (!canAccessOrganization(sessionUser, id)) {
+  if (!canAccessDepartment(sessionUser, id)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
   const holiday = await prisma.holiday.findUnique({ where: { id: holidayId } })
-  if (!holiday || holiday.organizationId !== id) {
+  if (!holiday || holiday.departmentId !== id) {
     return NextResponse.json({ error: "Holiday not found" }, { status: 404 })
   }
 
@@ -60,12 +60,12 @@ export async function DELETE(
   }
 
   const { id, holidayId } = await params
-  if (!canAccessOrganization(sessionUser, id)) {
+  if (!canAccessDepartment(sessionUser, id)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
   const holiday = await prisma.holiday.findUnique({ where: { id: holidayId } })
-  if (!holiday || holiday.organizationId !== id) {
+  if (!holiday || holiday.departmentId !== id) {
     return NextResponse.json({ error: "Holiday not found" }, { status: 404 })
   }
 

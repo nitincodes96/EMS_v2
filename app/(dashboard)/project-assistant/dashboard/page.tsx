@@ -85,7 +85,7 @@ type UpcomingLeaveSummary = {
   status: "PENDING" | "APPROVED" | "REJECTED"
 }
 
-type OrganizationSummary = {
+type DepartmentSummary = {
   id: string
   name: string
   description: string | null
@@ -161,7 +161,7 @@ export default function UserDashboard() {
   const { data: session, status: sessionStatus } = useSession()
   const [month, setMonth] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<Date | null>(new Date())
-  const [organization, setOrganization] = useState<OrganizationSummary | null>(null)
+  const [department, setDepartment] = useState<DepartmentSummary | null>(null)
   const [userSalary, setUserSalary] = useState<UserSalarySummary | null>(null)
   const [attendance, setAttendance] = useState<AttendanceSummary>(null)
   const [leaveSummary, setLeaveSummary] = useState<LeaveSummary>(null)
@@ -180,21 +180,21 @@ export default function UserDashboard() {
   }, [month])
 
   const holidayLookup = useMemo(() => {
-    return (organization?.holidays || []).reduce<Record<string, HolidaySummary>>((acc, holiday) => {
+    return (department?.holidays || []).reduce<Record<string, HolidaySummary>>((acc, holiday) => {
       acc[dayKey(new Date(holiday.date))] = holiday
       return acc
     }, {})
-  }, [organization])
+  }, [department])
 
   const selectedMeta = selectedDay ? getDayMeta(selectedDay, holidayLookup) : null
   const isCheckedIn = !!attendance?.checkedInAt && !attendance?.checkedOutAt && attendance.isOpen
 
   const monthHolidays = useMemo(
     () =>
-      (organization?.holidays || [])
+      (department?.holidays || [])
         .filter((holiday) => isSameMonth(new Date(holiday.date), month))
         .sort((a, b) => a.date.localeCompare(b.date)),
-    [month, organization]
+    [month, department]
   )
 
   const leaveBalance = leaveSummary?.balance ?? 0
@@ -213,15 +213,15 @@ export default function UserDashboard() {
     const loadDashboard = async () => {
       setLoading(true)
       try {
-        const [organizationResponse, attendanceResponse, leavesResponse] = await Promise.all([
-          fetch("/api/organizations/me"),
+        const [departmentResponse, attendanceResponse, leavesResponse] = await Promise.all([
+          fetch("/api/departments/me"),
           fetch("/api/attendance/today"),
           fetch("/api/leaves"),
         ])
 
         const userSalaryResponse = await fetch("/api/users/me")
 
-        const organizationData = await organizationResponse.json()
+        const departmentData = await departmentResponse.json()
         const attendanceData = await attendanceResponse.json()
         const leavesData = await leavesResponse.json()
         const userSalaryData = await userSalaryResponse.json()
@@ -230,8 +230,8 @@ export default function UserDashboard() {
           return
         }
 
-        if (organizationResponse.ok && organizationData?.organization) {
-          setOrganization(organizationData.organization)
+        if (departmentResponse.ok && departmentData?.department) {
+          setDepartment(departmentData.department)
         }
 
         if (attendanceResponse.ok) {
@@ -316,7 +316,7 @@ export default function UserDashboard() {
   }
 
   const displayName = session?.user?.name ?? "there"
-  const organizationName = organization?.name ?? "your organization"
+  const departmentName = department?.name ?? "your department"
   const salaryAmount = userSalary?.salary ?? 0
   const salaryBasic = userSalary?.basicSalary ?? 0
   const salaryHra = userSalary?.hra ?? 0
@@ -331,11 +331,11 @@ export default function UserDashboard() {
               Good afternoon, {displayName}
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              {format(new Date(), "EEEE, MMMM d, yyyy")} · {organizationName}
+              {format(new Date(), "EEEE, MMMM d, yyyy")} · {departmentName}
             </p>
           </div>
           <div className="rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
-            {loading ? "Loading dashboard…" : `${organization?.workingDays || "Mon-Fri"}`}
+            {loading ? "Loading dashboard…" : `${department?.workingDays || "Mon-Fri"}`}
           </div>
         </div>
 
@@ -437,7 +437,7 @@ export default function UserDashboard() {
             </div>
           </div>
 
-          {/* Organization snapshot */}
+          {/* Department snapshot */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-indigo-50 text-indigo-600">
@@ -472,7 +472,7 @@ export default function UserDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-base font-semibold text-slate-900">My Attendance Calendar</h2>
-                <p className="text-sm text-slate-500">Attendance, leaves and organization holidays.</p>
+                <p className="text-sm text-slate-500">Attendance, leaves and department holidays.</p>
               </div>
               <div className="flex items-center gap-1">
                 <button

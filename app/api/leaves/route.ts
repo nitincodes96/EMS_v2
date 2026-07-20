@@ -9,7 +9,7 @@ function countLeaveDays(startDate: Date, endDate: Date) {
 
 export async function GET() {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || !sessionUser.organizationId) {
+  if (!sessionUser || !sessionUser.departmentId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -22,11 +22,11 @@ export async function GET() {
       userType: true,
       baseLeaveQuota: true,
       extraLeaveQuota: true,
-      organizationId: true,
+      departmentId: true,
     },
   })
 
-  if (!user || user.organizationId !== sessionUser.organizationId) {
+  if (!user || user.departmentId !== sessionUser.departmentId) {
     return NextResponse.json({ error: "User not found" }, { status: 404 })
   }
 
@@ -37,7 +37,7 @@ export async function GET() {
   const approvedLeaves = await prisma.leave.findMany({
     where: {
       userId: user.id,
-      organizationId: sessionUser.organizationId,
+      departmentId: sessionUser.departmentId,
       status: "APPROVED",
       startDate: { lte: yearEnd },
       endDate: { gte: yearStart },
@@ -48,7 +48,7 @@ export async function GET() {
   const pendingLeaves = await prisma.leave.count({
     where: {
       userId: user.id,
-      organizationId: sessionUser.organizationId,
+      departmentId: sessionUser.departmentId,
       status: "PENDING",
     },
   })
@@ -56,7 +56,7 @@ export async function GET() {
   const upcomingLeaves = await prisma.leave.findMany({
     where: {
       userId: user.id,
-      organizationId: sessionUser.organizationId,
+      departmentId: sessionUser.departmentId,
       endDate: { gte: new Date() },
       status: { in: ["PENDING", "APPROVED"] },
     },
@@ -91,7 +91,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || !sessionUser.organizationId) {
+  if (!sessionUser || !sessionUser.departmentId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
 
     const leave = await prisma.leave.create({
       data: {
-        organizationId: sessionUser.organizationId,
+        departmentId: sessionUser.departmentId,
         userId: sessionUser.id,
         startDate: start,
         endDate: end,

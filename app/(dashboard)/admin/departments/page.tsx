@@ -57,7 +57,7 @@ interface OrgLocation {
     radiusMeters: number
 }
 
-interface Organization {
+interface Department {
     id: string
     name: string
     slug: string
@@ -158,7 +158,7 @@ function OrgAvatar({
         <div
             className={cn(
                 "flex items-center justify-center rounded-xl border text-sm font-bold",
-                avatarColor(name || "Organization"),
+                avatarColor(name || "Department"),
                 className
             )}
         >
@@ -349,7 +349,7 @@ function HolidayCsvStep({
                 <p className="text-xs leading-relaxed text-indigo-700">
                     Optionally import a starting holiday calendar via CSV. First column Date, second Holiday Name,
                     third Holiday Type (Custom, Religious or National). This step is fully optional — skip it and
-                    add holidays later from the organization page.
+                    add holidays later from the department page.
                 </p>
             </div>
 
@@ -404,7 +404,7 @@ function HolidayCsvStep({
 }
 
 // ---------------------------------------------------------------------------
-// Create Organization wizard
+// Create Department wizard
 // ---------------------------------------------------------------------------
 
 function CreateOrgWizard({
@@ -453,7 +453,7 @@ function CreateOrgWizard({
     const validateStep = (): boolean => {
         setError("")
         if (step === 1 && !formData.name.trim()) {
-            setError("Organization name is required.")
+            setError("Department name is required.")
             return false
         }
         if (step === 2 && formData.workingDays.length === 0) {
@@ -509,10 +509,10 @@ function CreateOrgWizard({
             payload.append("contractualMonthlyCap", String(formData.contractualMonthlyCap))
             if (logoFile) payload.append("logo", logoFile)
 
-            const res = await fetch("/api/organizations", { method: "POST", body: payload })
+            const res = await fetch("/api/departments", { method: "POST", body: payload })
             const data = await res.json()
             if (!res.ok) {
-                setError(data.error || "Failed to create organization")
+                setError(data.error || "Failed to create department")
                 return
             }
             onSuccess()
@@ -554,7 +554,7 @@ function CreateOrgWizard({
                     <div className="space-y-4">
                         <div className="space-y-1.5">
                             <Label htmlFor="org-name">
-                                Organization name <span className="text-red-500">*</span>
+                                Department name <span className="text-red-500">*</span>
                             </Label>
                             <Input
                                 id="org-name"
@@ -569,7 +569,7 @@ function CreateOrgWizard({
                             <Label htmlFor="org-desc">Description</Label>
                             <Textarea
                                 id="org-desc"
-                                placeholder="Brief description of the organization..."
+                                placeholder="Brief description of the department..."
                                 rows={4}
                                 className="resize-none text-sm"
                                 value={formData.description}
@@ -578,7 +578,7 @@ function CreateOrgWizard({
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Organization logo</Label>
+                            <Label>Department logo</Label>
                             <div className="flex items-center gap-4">
                                 <label className="flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50 text-slate-400 transition-colors hover:border-indigo-400 hover:text-indigo-500">
                                     {logoPreview ? (
@@ -860,7 +860,7 @@ function CreateOrgWizard({
 }
 
 // ---------------------------------------------------------------------------
-// Edit Organization dialog
+// Edit Department dialog
 // ---------------------------------------------------------------------------
 
 function EditOrgDialog({
@@ -868,7 +868,7 @@ function EditOrgDialog({
     onClose,
     onSuccess,
 }: {
-    org: Organization
+    org: Department
     onClose: () => void
     onSuccess: () => void
 }) {
@@ -928,7 +928,7 @@ function EditOrgDialog({
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!form.name.trim()) {
-            setError("Organization name is required")
+            setError("Department name is required")
             return
         }
         if (form.workingDays.length === 0) {
@@ -964,10 +964,10 @@ function EditOrgDialog({
             payload.append("contractualMonthlyCap", String(form.contractualMonthlyCap))
             if (logoFile) payload.append("logo", logoFile)
 
-            const res = await fetch(`/api/organizations/${org.id}`, { method: "PATCH", body: payload })
+            const res = await fetch(`/api/departments/${org.id}`, { method: "PATCH", body: payload })
             const data = await res.json()
             if (!res.ok) {
-                setError(data.error || "Failed to update organization")
+                setError(data.error || "Failed to update department")
                 return
             }
             onSuccess()
@@ -1001,7 +1001,7 @@ function EditOrgDialog({
                 <TabsContent value="basic" className="mt-0 min-h-56 space-y-4 px-4 py-4 sm:px-5">
                     <div className="space-y-1.5">
                         <Label htmlFor="edit-name">
-                            Organization name <span className="text-red-500">*</span>
+                            Department name <span className="text-red-500">*</span>
                         </Label>
                         <Input id="edit-name" autoFocus value={form.name} onChange={(e) => set("name", e.target.value)} />
                     </div>
@@ -1016,7 +1016,7 @@ function EditOrgDialog({
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label>Organization logo</Label>
+                        <Label>Department logo</Label>
                         <div className="flex items-center gap-4">
                             <label className="flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50 text-slate-400 transition-colors hover:border-indigo-400 hover:text-indigo-500">
                                 {logoPreview ? (
@@ -1176,49 +1176,49 @@ function EditOrgDialog({
 // Page
 // ---------------------------------------------------------------------------
 
-export default function OrganizationsPage() {
+export default function DepartmentsPage() {
     const router = useRouter()
-    const [organizations, setOrganizations] = useState<Organization[]>([])
+    const [departments, setDepartments] = useState<Department[]>([])
     const [loading, setLoading] = useState(true)
     const [createDialogOpen, setCreateDialogOpen] = useState(false)
     const [editDialogOpen, setEditDialogOpen] = useState(false)
-    const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null)
+    const [selectedOrg, setSelectedOrg] = useState<Department | null>(null)
     const [searchQuery, setSearchQuery] = useState("")
     const [navigatingId, setNavigatingId] = useState<string | null>(null)
 
     useEffect(() => {
-        fetchOrganizations()
+        fetchDepartments()
     }, [])
 
-    const fetchOrganizations = async () => {
+    const fetchDepartments = async () => {
         try {
-            const res = await fetch("/api/organizations")
+            const res = await fetch("/api/departments")
             const data = await res.json()
-            if (res.ok) setOrganizations(data.organizations)
+            if (res.ok) setDepartments(data.departments)
         } catch (err) {
-            console.error("Error fetching organizations:", err)
+            console.error("Error fetching departments:", err)
         } finally {
             setLoading(false)
         }
     }
 
-    const filteredOrgs = organizations.filter((org) =>
+    const filteredOrgs = departments.filter((org) =>
         org.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
 
     const handleCreateSuccess = () => {
         setCreateDialogOpen(false)
-        fetchOrganizations()
+        fetchDepartments()
     }
 
-    const openEditDialog = (org: Organization) => {
+    const openEditDialog = (org: Department) => {
         setSelectedOrg(org)
         setEditDialogOpen(true)
     }
 
-    const goToOrg = (org: Organization) => {
+    const goToOrg = (org: Department) => {
         setNavigatingId(org.id)
-        router.push(`/super-admin/organizations/${org.slug}`)
+        router.push(`/admin/departments/${org.slug}`)
     }
 
     if (loading) {
@@ -1234,21 +1234,21 @@ export default function OrganizationsPage() {
             {/* Header */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Organizations</h1>
-                    <p className="mt-1 text-sm text-slate-500">Manage every organization on the platform.</p>
+                    <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Departments</h1>
+                    <p className="mt-1 text-sm text-slate-500">Manage every department on the organization.</p>
                 </div>
 
                 <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
                     <DialogTrigger className="cursor-pointer">
                         <Button className="h-9 px-4 font-semibold bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer">
                             <Plus className="mr-1.5 h-4 w-4" />
-                            New Organization
+                            New Department
                         </Button>
                     </DialogTrigger>
                     <DialogContent className="w-[95vw] gap-0 overflow-hidden bg-white p-0 sm:min-w-xl max-h-[90vh]">
                         <DialogHeader className="border-b-0 px-6 pb-0 pt-5">
-                            <DialogTitle className="text-base font-bold text-slate-900">New Organization</DialogTitle>
-                            <DialogDescription className="sr-only">Create organization wizard</DialogDescription>
+                            <DialogTitle className="text-base font-bold text-slate-900">New Department</DialogTitle>
+                            <DialogDescription className="sr-only">Create department wizard</DialogDescription>
                         </DialogHeader>
                         <CreateOrgWizard onSuccess={handleCreateSuccess} onCancel={() => setCreateDialogOpen(false)} />
                     </DialogContent>
@@ -1256,11 +1256,11 @@ export default function OrganizationsPage() {
             </div>
 
             {/* Search */}
-            {organizations.length > 0 && (
+            {departments.length > 0 && (
                 <div className="relative w-full sm:max-w-xs">
                     <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                     <Input
-                        placeholder="Search organizations..."
+                        placeholder="Search departments..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="h-9 pl-9 text-sm"
@@ -1269,12 +1269,12 @@ export default function OrganizationsPage() {
             )}
 
             {/* Empty state */}
-            {organizations.length === 0 ? (
+            {departments.length === 0 ? (
                 <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 py-20">
                     <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm">
                         <Building2 className="h-6 w-6 text-slate-300" />
                     </div>
-                    <p className="mb-1 font-semibold text-slate-900">No organizations yet</p>
+                    <p className="mb-1 font-semibold text-slate-900">No departments yet</p>
 
                 </div>
             ) : (
@@ -1388,8 +1388,8 @@ export default function OrganizationsPage() {
             >
                 <DialogContent className="w-[95vw] gap-0 overflow-hidden bg-white p-0 sm:max-w-xl">
                     <DialogHeader className="px-5 pb-0 pt-5">
-                        <DialogTitle className="text-base font-bold text-slate-900">Edit Organization</DialogTitle>
-                        <DialogDescription className="sr-only">Edit organization settings</DialogDescription>
+                        <DialogTitle className="text-base font-bold text-slate-900">Edit Department</DialogTitle>
+                        <DialogDescription className="sr-only">Edit department settings</DialogDescription>
                     </DialogHeader>
                     {selectedOrg && (
                         <EditOrgDialog
@@ -1401,7 +1401,7 @@ export default function OrganizationsPage() {
                             onSuccess={() => {
                                 setEditDialogOpen(false)
                                 setSelectedOrg(null)
-                                fetchOrganizations()
+                                fetchDepartments()
                             }}
                         />
                     )}

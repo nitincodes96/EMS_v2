@@ -4,8 +4,8 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route"
 export type SessionUser = {
   id: string
   email: string
-  role: "SUPER_ADMIN" | "ADMIN" | "USER"
-  organizationId: string | null
+  role: "ADMIN" | "FACULTY" | "PROJECT_ASSISTANT"
+  departmentId: string | null
 }
 
 export async function getSessionUser(): Promise<SessionUser | undefined> {
@@ -15,12 +15,12 @@ export async function getSessionUser(): Promise<SessionUser | undefined> {
     id: session.user.id,
     email: session.user.email ?? "",
     role: session.user.role as SessionUser["role"],
-    organizationId: session.user.organizationId ?? null,
+    departmentId: session.user.departmentId ?? null,
   }
 }
 
-export function canAccessOrganization(user: SessionUser, organizationId: string): boolean {
-  if (user.role === "SUPER_ADMIN") return true
-  if (user.role === "ADMIN") return user.organizationId === organizationId
+export function canAccessDepartment(user: SessionUser, departmentId: string): boolean {
+  if (user.role === "ADMIN") return true
+  if (user.role === "FACULTY") return user.departmentId === departmentId
   return false
 }

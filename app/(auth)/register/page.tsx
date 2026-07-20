@@ -34,11 +34,11 @@ const DEFAULT_BRAND_NAME = "EMS Portal";
 // Validation schemas
 // ---------------------------------------------------------------------------
 
-const platformSchema = z.object({
-  platformName: z
+const organizationSchema = z.object({
+  organizationName: z
     .string()
-    .min(2, "Platform name must be at least 2 characters")
-    .max(80, "Platform name is too long"),
+    .min(2, "Organization name must be at least 2 characters")
+    .max(80, "Organization name is too long"),
   logo: z
     .custom<File | undefined>()
     .refine(
@@ -55,7 +55,7 @@ const platformSchema = z.object({
     )
     .optional(),
 });
-type PlatformValues = z.infer<typeof platformSchema>;
+type OrganizationValues = z.infer<typeof organizationSchema>;
 
 const accountSchema = z
   .object({
@@ -90,9 +90,9 @@ export default function RegisterPage() {
   const [logoPreview, setLogoPreview] = useState<string | undefined>();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const platformForm = useForm<PlatformValues>({
-    resolver: zodResolver(platformSchema),
-    defaultValues: { platformName: "" },
+  const organizationForm = useForm<OrganizationValues>({
+    resolver: zodResolver(organizationSchema),
+    defaultValues: { organizationName: "" },
   });
 
   // step 2 state
@@ -113,7 +113,7 @@ export default function RegisterPage() {
   function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    platformForm.setValue("logo", file, { shouldValidate: true });
+    organizationForm.setValue("logo", file, { shouldValidate: true });
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
@@ -129,7 +129,7 @@ export default function RegisterPage() {
   }
 
   function clearLogo() {
-    platformForm.setValue("logo", undefined);
+    organizationForm.setValue("logo", undefined);
     setLogoPreview(undefined);
     if (fileInputRef.current) fileInputRef.current.value = "";
     
@@ -139,12 +139,12 @@ export default function RegisterPage() {
     }
   }
 
-  function handlePlatformSubmit(values: PlatformValues) {
+  function handleOrganizationSubmit(values: OrganizationValues) {
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(
         DRAFT_KEY,
         JSON.stringify({
-          platformName: values.platformName,
+          organizationName: values.organizationName,
           logoName: values.logo?.name,
           logoPreview,
         })
@@ -160,7 +160,7 @@ export default function RegisterPage() {
       );
 
       const payload = {
-        platformName: existing.platformName,
+        organizationName: existing.organizationName,
         logoBase64: existing.logoPreview,
         username: values.username,
         email: values.email,
@@ -290,18 +290,18 @@ export default function RegisterPage() {
         </>
       }
     >
-      <BrandMark platformName={DEFAULT_BRAND_NAME} logoUrl={logoPreview ?? null} />
+      <BrandMark organizationName={DEFAULT_BRAND_NAME} logoUrl={logoPreview ?? null} />
 
       <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
         Create your workspace
       </h1>
       <p className="mt-1.5 text-sm text-slate-500">
-        Set up your Platform, then your account.
+        Set up your Organization, then your account.
       </p>
 
             <ol className="mb-8 mt-8 flex items-center gap-3">
               {[
-                { label: "Platform", description: "Name & logo" },
+                { label: "Organization", description: "Name & logo" },
                 { label: "Account", description: "Your details" },
               ].map((s, index) => {
                 const stepNumber = (index + 1) as 1 | 2;
@@ -352,29 +352,29 @@ export default function RegisterPage() {
               })}
             </ol>
 
-            {/* ---------------- Step 1: Platform ---------------- */}
+            {/* ---------------- Step 1: Organization ---------------- */}
             {step === 1 && (
               <form
                 className="space-y-5"
-                onSubmit={platformForm.handleSubmit(handlePlatformSubmit)}
+                onSubmit={organizationForm.handleSubmit(handleOrganizationSubmit)}
               >
                 <div className="space-y-2">
-                  <Label htmlFor="platformName">Platform name</Label>
+                  <Label htmlFor="organizationName">Organization name</Label>
                   <Input
-                    id="platformName"
-                    placeholder="Enter Platform Name"
+                    id="organizationName"
+                    placeholder="Enter Organization Name"
                     autoFocus
-                    {...platformForm.register("platformName")}
+                    {...organizationForm.register("organizationName")}
                   />
-                  {platformForm.formState.errors.platformName && (
+                  {organizationForm.formState.errors.organizationName && (
                     <p className="text-xs text-red-500">
-                      {platformForm.formState.errors.platformName.message}
+                      {organizationForm.formState.errors.organizationName.message}
                     </p>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Platform logo</Label>
+                  <Label>Organization logo</Label>
                   <div className="flex items-center gap-4">
                     <button
                       type="button"
@@ -423,9 +423,9 @@ export default function RegisterPage() {
                     className="hidden"
                     onChange={handleLogoChange}
                   />
-                  {platformForm.formState.errors.logo && (
+                  {organizationForm.formState.errors.logo && (
                     <p className="text-xs text-red-500">
-                      {platformForm.formState.errors.logo.message as string}
+                      {organizationForm.formState.errors.logo.message as string}
                     </p>
                   )}
                 </div>
@@ -433,7 +433,7 @@ export default function RegisterPage() {
                 <Button
                   type="submit"
                   className="w-full bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
-                  disabled={platformForm.formState.isSubmitting}
+                  disabled={organizationForm.formState.isSubmitting}
                 >
                   Continue
                 </Button>

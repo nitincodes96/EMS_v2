@@ -8,7 +8,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
 
   const user = await prisma.user.findUnique({
     where: { inviteToken: token },
-    include: { organization: { select: { name: true } } },
+    include: { department: { select: { name: true } } },
   })
 
   if (!user) {
@@ -20,7 +20,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
 
   return NextResponse.json({
     email: user.email,
-    organizationName: user.organization?.name ?? "",
+    departmentName: user.department?.name ?? "",
   })
 }
 

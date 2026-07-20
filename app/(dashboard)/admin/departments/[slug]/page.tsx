@@ -52,7 +52,7 @@ import {
   Activity,
   type LucideIcon,
 } from 'lucide-react'
-import { OrganizationDetailSkeleton } from '@/components/dashboard/skeletons'
+import { DepartmentDetailSkeleton } from '@/components/dashboard/skeletons'
 import { UserFilter } from '@/components/shared/filters/user-filter'
 import { format } from 'date-fns'
 import { PREDEFINED_RELIGIOUS_HOLIDAYS } from '@/lib/holidays'
@@ -71,7 +71,7 @@ interface User {
   panNumber?: string | null
   dateOfBirth?: string | null
   resumeUrl?: string | null
-  role: 'USER' | 'ADMIN' | 'SUPER_ADMIN'
+  role: 'PROJECT_ASSISTANT' | 'FACULTY' | 'ADMIN'
   userType: 'EMPLOYEE' | 'INTERN' | 'CONTRACTUAL'
   isActive: boolean
   baseLeaveQuota: number
@@ -107,7 +107,7 @@ interface Holiday {
   type: 'NATIONAL' | 'RELIGIOUS' | 'CUSTOM'
 }
 
-interface OrganizationDetails {
+interface DepartmentDetails {
   id: string
   name: string
   description: string | null
@@ -134,14 +134,14 @@ type SidebarTab = 'activity' | 'leaves' | 'holidays'
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function OrganizationDetailsPage() {
+export default function DepartmentDetailsPage() {
   const params = useParams()
   const slug = Array.isArray(params.slug) ? params.slug[0] : params.slug
   const router = useRouter()
 
   // ── Core state ──
   const [loading, setLoading] = useState(true)
-  const [org, setOrg] = useState<OrganizationDetails | null>(null)
+  const [org, setOrg] = useState<DepartmentDetails | null>(null)
   const [error, setError] = useState('')
 
   // ── Add User state ──
@@ -155,7 +155,7 @@ export default function OrganizationDetailsPage() {
     panNumber: '',
     dateOfBirth: '',
     resumeUrl: '',
-    role: 'USER',
+    role: 'PROJECT_ASSISTANT',
     userType: 'EMPLOYEE',
     basicSalary: '',
     hra: '',
@@ -213,11 +213,11 @@ export default function OrganizationDetailsPage() {
   const fetchDetails = (showSkeleton = false) => {
     if (!slug) return
     if (showSkeleton) setLoading(true)
-    fetch(`/api/organizations/slug/${slug}`)
+    fetch(`/api/departments/slug/${slug}`)
       .then((res) => res.json())
       .then((data) => {
-        if (data.organization) setOrg(data.organization)
-        else setError(data.error || 'Failed to fetch organization details')
+        if (data.department) setOrg(data.department)
+        else setError(data.error || 'Failed to fetch department details')
       })
       .catch(() => setError('An error occurred while fetching data'))
       .finally(() => setLoading(false))
@@ -287,7 +287,7 @@ export default function OrganizationDetailsPage() {
       formData.append('dateOfBirth', newUser.dateOfBirth)
       formData.append('role', newUser.role)
       formData.append('userType', newUser.userType)
-      formData.append('organizationId', org.id)
+      formData.append('departmentId', org.id)
       if (newUser.basicSalary !== '') formData.append('basicSalary', newUser.basicSalary)
       if (newUser.hra !== '') formData.append('hra', newUser.hra)
       formData.append('tdsPercent', newUser.tdsPercent)
@@ -311,7 +311,7 @@ export default function OrganizationDetailsPage() {
         panNumber: '',
         dateOfBirth: '',
         resumeUrl: '',
-        role: 'USER',
+        role: 'PROJECT_ASSISTANT',
         userType: 'EMPLOYEE',
         basicSalary: '',
         hra: '',
@@ -458,13 +458,13 @@ export default function OrganizationDetailsPage() {
     setSubmitting(true)
     try {
       if (selectedHolidayId) {
-        await fetch(`/api/organizations/${org?.id}/holidays/${selectedHolidayId}`, {
+        await fetch(`/api/departments/${org?.id}/holidays/${selectedHolidayId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(holidayForm),
         })
       } else {
-        await fetch(`/api/organizations/${org?.id}/holidays`, {
+        await fetch(`/api/departments/${org?.id}/holidays`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(holidayForm),
@@ -482,7 +482,7 @@ export default function OrganizationDetailsPage() {
   const handleDeleteHoliday = async (id: string) => {
     if (!confirm('Are you sure you want to delete this holiday?')) return
     try {
-      await fetch(`/api/organizations/${org?.id}/holidays/${id}`, { method: 'DELETE' })
+      await fetch(`/api/departments/${org?.id}/holidays/${id}`, { method: 'DELETE' })
       fetchDetails()
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to delete holiday')
@@ -500,16 +500,16 @@ export default function OrganizationDetailsPage() {
     }
   }
 
-  if (loading) return <OrganizationDetailSkeleton />
+  if (loading) return <DepartmentDetailSkeleton />
 
   if (error || !org) {
     return (
       <div className="p-6">
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-          {error || 'Organization not found'}
+          {error || 'Department not found'}
         </div>
-        <Button variant="outline" className="mt-4" onClick={() => router.push('/super-admin/organizations')}>
-          <ArrowLeft className="h-4 w-4 mr-2" /> Back to Organizations
+        <Button variant="outline" className="mt-4" onClick={() => router.push('/admin/departments')}>
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back to Departments
         </Button>
       </div>
     )
@@ -549,7 +549,7 @@ export default function OrganizationDetailsPage() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => router.push('/super-admin/organizations')}
+            onClick={() => router.push('/admin/departments')}
             className="h-7 w-7 cursor-pointer shrink-0"
           >
             <ArrowLeft className="h-3.5 w-3.5 text-slate-600" />
@@ -670,17 +670,17 @@ export default function OrganizationDetailsPage() {
                 <div className="flex gap-4">
                   <div className="space-y-2 flex-1">
                     <Label htmlFor="role">Role</Label>
-                    <Select value={newUser.role} onValueChange={(value) => value && setNewUser({ ...newUser, role: value, userType: value === 'ADMIN' ? 'EMPLOYEE' : newUser.userType })}>
+                    <Select value={newUser.role} onValueChange={(value) => value && setNewUser({ ...newUser, role: value, userType: value === 'FACULTY' ? 'EMPLOYEE' : newUser.userType })}>
                       <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="USER">User</SelectItem>
-                        <SelectItem value="ADMIN">Admin</SelectItem>
+                        <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
+                        <SelectItem value="FACULTY">Faculty</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2 flex-1">
                     <Label htmlFor="userType">User Type</Label>
-                    <Select value={newUser.userType} onValueChange={(value: any) => setNewUser({ ...newUser, userType: value })} disabled={newUser.role === 'ADMIN'}>
+                    <Select value={newUser.userType} onValueChange={(value: any) => setNewUser({ ...newUser, userType: value })} disabled={newUser.role === 'FACULTY'}>
                       <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="EMPLOYEE">Employee</SelectItem>
@@ -688,7 +688,7 @@ export default function OrganizationDetailsPage() {
                         <SelectItem value="CONTRACTUAL">Contractual</SelectItem>
                       </SelectContent>
                     </Select>
-                    {newUser.role === 'ADMIN' && <p className="text-[10px] text-slate-400">Admins are always Employees</p>}
+                    {newUser.role === 'FACULTY' && <p className="text-[10px] text-slate-400">Faculty are always Employees</p>}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -837,7 +837,7 @@ export default function OrganizationDetailsPage() {
                         <div className="flex items-center gap-3">
                           <EntityAvatar name={member.name} fallbackText={member.email} imageUrl={member.photoUrl} className="h-9 w-9 border border-slate-200" />
                           <div className="flex flex-col">
-                            <Link href={`/super-admin/attendance/${member.id}`} className="text-xs font-semibold text-slate-800 hover:underline leading-tight">
+                            <Link href={`/admin/attendance/${member.id}`} className="text-xs font-semibold text-slate-800 hover:underline leading-tight">
                               {member.name || 'Unnamed'}
                             </Link>
                             <span className="text-[10px] text-slate-400 leading-tight">{member.email}</span>
@@ -850,8 +850,8 @@ export default function OrganizationDetailsPage() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="USER">User</SelectItem>
-                            <SelectItem value="ADMIN">Admin</SelectItem>
+                            <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
+                            <SelectItem value="FACULTY">Faculty</SelectItem>
                           </SelectContent>
                         </Select>
                       </TableCell>
@@ -1077,7 +1077,7 @@ export default function OrganizationDetailsPage() {
               <div className="space-y-2">
                 <Label>Base Leave Quota</Label>
                 <Input type="number" value={editingMember.baseLeaveQuota} disabled className="bg-slate-50" />
-                <p className="text-xs text-slate-400">Set at organization level based on user type ({editingMember.userType})</p>
+                <p className="text-xs text-slate-400">Set at department level based on user type ({editingMember.userType})</p>
               </div>
             )}
             <div className="space-y-2">
@@ -1133,7 +1133,7 @@ export default function OrganizationDetailsPage() {
             </DialogTitle>
             <DialogDescription>
               Are you sure you want to {confirmAction?.isActive ? 'activate' : 'deactivate'} this user?{' '}
-              {confirmAction?.isActive ? 'They will regain access to the platform.' : 'They will no longer be able to log in.'}
+              {confirmAction?.isActive ? 'They will regain access to the organization.' : 'They will no longer be able to log in.'}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:justify-end">
@@ -1219,7 +1219,7 @@ export default function OrganizationDetailsPage() {
                       if (!holidayForm.name || !holidayForm.date) return
                       setSubmitting(true)
                       try {
-                        await fetch(`/api/organizations/${org?.id}/holidays`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(holidayForm) })
+                        await fetch(`/api/departments/${org?.id}/holidays`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(holidayForm) })
                         setShowHolidayDialog(false)
                         fetchDetails()
                       } catch (err) { }
@@ -1265,7 +1265,7 @@ export default function OrganizationDetailsPage() {
                         onClick={async () => {
                           setSubmitting(true)
                           try {
-                            await Promise.all(draftReligious.map(d => fetch(`/api/organizations/${org?.id}/holidays`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: d.name, date: d.date, type: 'RELIGIOUS' }) })))
+                            await Promise.all(draftReligious.map(d => fetch(`/api/departments/${org?.id}/holidays`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: d.name, date: d.date, type: 'RELIGIOUS' }) })))
                             setDraftReligious([])
                             fetchDetails()
                           } catch (err) { }

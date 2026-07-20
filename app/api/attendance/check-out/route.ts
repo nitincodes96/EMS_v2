@@ -6,7 +6,7 @@ import { haversineDistanceMeters } from "@/lib/geo"
 
 export async function POST(request: Request) {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || !sessionUser.organizationId) {
+  if (!sessionUser || !sessionUser.departmentId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -31,8 +31,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No open check-in found for today" }, { status: 404 })
     }
 
-    const locations = await prisma.organizationLocation.findMany({
-      where: { organizationId: sessionUser.organizationId },
+    const locations = await prisma.departmentLocation.findMany({
+      where: { departmentId: sessionUser.departmentId },
     })
 
     if (locations.length > 0) {

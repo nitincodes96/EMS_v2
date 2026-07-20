@@ -15,7 +15,7 @@ import { getDashboardPath } from "@/lib/role-routes";
 import { BrandMark } from "@/components/auth/brand-mark";
 import { AuthShell } from "@/components/auth/auth-shell";
 
-function LoginForm({ platformName, logoUrl }: { platformName: string; logoUrl: string | null }) {
+function LoginForm({ organizationName, logoUrl }: { organizationName: string; logoUrl: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -60,13 +60,13 @@ function LoginForm({ platformName, logoUrl }: { platformName: string; logoUrl: s
 
   return (
     <>
-      <BrandMark platformName={platformName} logoUrl={logoUrl} />
+      <BrandMark organizationName={organizationName} logoUrl={logoUrl} />
 
       <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
         Account Login
       </h1>
       <p className="mt-2 text-sm text-slate-500">
-        Authenticate to access your organization workspace.
+        Authenticate to access your department workspace.
       </p>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-5">
@@ -76,7 +76,7 @@ function LoginForm({ platformName, logoUrl }: { platformName: string; logoUrl: s
             <Input
               id="email"
               type="email"
-              placeholder="admin@organization.com"
+              placeholder="admin@department.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -133,12 +133,12 @@ function LoginForm({ platformName, logoUrl }: { platformName: string; logoUrl: s
   );
 }
 
-function InviteAcceptForm({ token, platformName, logoUrl }: { token: string; platformName: string; logoUrl: string | null }) {
+function InviteAcceptForm({ token, organizationName, logoUrl }: { token: string; organizationName: string; logoUrl: string | null }) {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
   const [inviteError, setInviteError] = useState("");
   const [email, setEmail] = useState("");
-  const [organizationName, setOrganizationName] = useState("");
+  const [departmentName, setDepartmentName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -153,7 +153,7 @@ function InviteAcceptForm({ token, platformName, logoUrl }: { token: string; pla
           return;
         }
         setEmail(data.email);
-        setOrganizationName(data.organizationName);
+        setDepartmentName(data.departmentName);
       })
       .catch(() => setInviteError("This invite link is invalid or has expired."))
       .finally(() => setChecking(false));
@@ -217,9 +217,9 @@ function InviteAcceptForm({ token, platformName, logoUrl }: { token: string; pla
 
   return (
     <>
-      <BrandMark platformName={platformName} logoUrl={logoUrl} />
+      <BrandMark organizationName={organizationName} logoUrl={logoUrl} />
       <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Account Activation</h1>
-      <p className="mt-2 text-sm text-slate-500">Configure your credentials for {organizationName || "your organization"}.</p>
+      <p className="mt-2 text-sm text-slate-500">Configure your credentials for {departmentName || "your department"}.</p>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-5">
         <div className="space-y-2">
@@ -297,7 +297,7 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
   const inviteToken = searchParams.get("invite");
   const loginError = searchParams.get("error");
-  const [platformName, setPlatformName] = useState("Enterprise Systems");
+  const [organizationName, setOrganizationName] = useState("Enterprise Systems");
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
   useEffect(() => {
@@ -307,10 +307,10 @@ function LoginPageContent() {
   }, [loginError]);
 
   useEffect(() => {
-    fetch("/api/platform-exists")
+    fetch("/api/organization-exists")
       .then((res) => res.json())
       .then((data) => {
-        if (data.name) setPlatformName(data.name);
+        if (data.name) setOrganizationName(data.name);
         if (data.logoURL) setLogoPreview(data.logoURL);
       })
       .catch(console.error);
@@ -325,7 +325,7 @@ function LoginPageContent() {
             <h2 className="text-3xl font-medium tracking-tight text-white leading-tight">
               Enterprise-grade <br />
               management for <br />
-              <span className="text-slate-400">modern organizations.</span>
+              <span className="text-slate-400">modern departments.</span>
             </h2>
             <p className="mt-4 text-sm text-slate-400 max-w-sm leading-relaxed">
               Streamline operations, manage resources securely, and gain comprehensive oversight through a centralized command portal.
@@ -342,7 +342,7 @@ function LoginPageContent() {
                 </span>
               </div>
               <span className="text-xs text-slate-500">
-                &copy; {new Date().getFullYear()} {platformName}.
+                &copy; {new Date().getFullYear()} {organizationName}.
               </span>
             </div>
           </div>
@@ -350,9 +350,9 @@ function LoginPageContent() {
       }
     >
       {inviteToken ? (
-        <InviteAcceptForm token={inviteToken} platformName={platformName} logoUrl={logoPreview} />
+        <InviteAcceptForm token={inviteToken} organizationName={organizationName} logoUrl={logoPreview} />
       ) : (
-        <LoginForm platformName={platformName} logoUrl={logoPreview} />
+        <LoginForm organizationName={organizationName} logoUrl={logoPreview} />
       )}
     </AuthShell>
   );

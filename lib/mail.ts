@@ -24,8 +24,8 @@ function extractEmailAddress(fromValue?: string | null): string {
 }
 
 export async function getMailBrandName(): Promise<string> {
-  const platform = await prisma.platform.findFirst({ select: { name: true } });
-  return platform?.name?.trim() || DEFAULT_BRAND_NAME;
+  const organization = await prisma.organization.findFirst({ select: { name: true } });
+  return organization?.name?.trim() || DEFAULT_BRAND_NAME;
 }
 
 function buildFromHeader(brandName: string, smtpFrom?: string | null): string {

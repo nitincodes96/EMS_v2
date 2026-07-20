@@ -6,9 +6,9 @@ export default async function RegisterLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const platformCount = await prisma.platform.count();
+  const organizationCount = await prisma.organization.count();
   
-  if (platformCount > 0) {
+  if (organizationCount > 0) {
     redirect("/login");
   }
 

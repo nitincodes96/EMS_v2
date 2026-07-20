@@ -16,7 +16,7 @@ function formatTime(date: Date | null): string | null {
 
 export async function GET() {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || !sessionUser.organizationId) {
+  if (!sessionUser || !sessionUser.departmentId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

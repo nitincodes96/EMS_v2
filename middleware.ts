@@ -6,10 +6,10 @@ import { getDashboardPath } from "@/lib/role-routes";
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
-  // Try to fetch the platform status
-  let platformExists = true; // default to true to fail safe
+  // Try to fetch the organization status
+  let organizationExists = true; // default to true to fail safe
   try {
-    const url = new URL("/api/platform-exists", request.url);
+    const url = new URL("/api/organization-exists", request.url);
     const response = await fetch(url.toString(), {
       // Short cache or no-store, depending on needs. We can use no-store to be safe.
       cache: "no-store",
@@ -17,7 +17,7 @@ export async function middleware(request: NextRequest) {
     
     if (response.ok) {
       const data = await response.json();
-      platformExists = data.exists;
+      organizationExists = data.exists;
     }
   } catch (err) {
     console.error("Middleware fetch error:", err);
@@ -49,8 +49,8 @@ export async function middleware(request: NextRequest) {
     isActiveSession = false;
   }
   
-  // Logic: Platform Doesn't Exist
-  if (!platformExists) {
+  // Logic: Organization Doesn't Exist
+  if (!organizationExists) {
     // Only allow access to register and verify. If not on those, redirect to register
     if (pathname !== "/register" && pathname !== "/verify") {
       return NextResponse.redirect(new URL("/register", request.url));
@@ -58,9 +58,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Logic: Platform Exists
-  // If platform exists, they shouldn't access the register page
-  if (platformExists && pathname === "/register") {
+  // Logic: Organization Exists
+  // If organization exists, they shouldn't access the register page
+  if (organizationExists && pathname === "/register") {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

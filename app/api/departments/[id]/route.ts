@@ -7,23 +7,23 @@ type LocationInput = { name: string; latitude: number; longitude: number; radius
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || sessionUser.role !== "SUPER_ADMIN") {
+  if (!sessionUser || sessionUser.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
   const { id } = await params
 
   try {
-    const existing = await prisma.organization.findUnique({ where: { id } })
+    const existing = await prisma.department.findUnique({ where: { id } })
     if (!existing) {
-      return NextResponse.json({ error: "Organization not found" }, { status: 404 })
+      return NextResponse.json({ error: "Department not found" }, { status: 404 })
     }
 
     const formData = await request.formData()
 
     const name = String(formData.get("name") || "").trim()
     if (!name) {
-      return NextResponse.json({ error: "Organization name is required" }, { status: 400 })
+      return NextResponse.json({ error: "Department name is required" }, { status: 400 })
     }
 
     const description = (formData.get("description") as string) || null
@@ -51,11 +51,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     let logoUrl: string | undefined
     const logo = formData.get("logo") as File | null
     if (logo && logo.size > 0) {
-      logoUrl = await saveUploadedFile(logo, "organizations")
+      logoUrl = await saveUploadedFile(logo, "departments")
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.organization.update({
+      await tx.department.update({
         where: { id },
         data: {
           name,
@@ -75,11 +75,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       })
 
       if (locations) {
-        await tx.organizationLocation.deleteMany({ where: { organizationId: id } })
+        await tx.departmentLocation.deleteMany({ where: { departmentId: id } })
         if (locations.length > 0) {
-          await tx.organizationLocation.createMany({
+          await tx.departmentLocation.createMany({
             data: locations.map((l) => ({
-              organizationId: id,
+              departmentId: id,
               name: l.name,
               latitude: Number(l.latitude),
               longitude: Number(l.longitude),
@@ -90,14 +90,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }
     })
 
-    const organization = await prisma.organization.findUnique({
+    const department = await prisma.department.findUnique({
       where: { id },
       include: { locations: true },
     })
 
-    return NextResponse.json({ organization })
+    return NextResponse.json({ department })
   } catch (error) {
-    console.error("Error updating organization:", error)
-    return NextResponse.json({ error: "Failed to update organization" }, { status: 500 })
+    console.error("Error updating department:", error)
+    return NextResponse.json({ error: "Failed to update department" }, { status: 500 })
   }
 }

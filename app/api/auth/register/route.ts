@@ -10,9 +10,9 @@ import { otpEmailHtml } from "@/lib/email-templates";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { platformName, logoBase64, username, email, password } = body;
+    const { organizationName, logoBase64, username, email, password } = body;
 
-    if (!platformName || !username || !email || !password) {
+    if (!organizationName || !username || !email || !password) {
       return NextResponse.json({ message: "Missing required fields" }, { status: 400 });
     }
 
@@ -29,10 +29,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "User with this email already exists" }, { status: 400 });
     }
 
-    // Check if platform already exists
-    const platformCount = await prisma.platform.count();
-    if (platformCount > 0) {
-      return NextResponse.json({ message: "A platform is already registered." }, { status: 400 });
+    // Check if organization already exists
+    const organizationCount = await prisma.organization.count();
+    if (organizationCount > 0) {
+      return NextResponse.json({ message: "A organization is already registered." }, { status: 400 });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -47,14 +47,14 @@ export async function POST(req: Request) {
           const extension = mimeType.split('/')[1] === 'svg+xml' ? 'svg' : mimeType.split('/')[1];
           
           const filename = `${crypto.randomUUID()}.${extension}`;
-          const uploadsDir = path.join(process.cwd(), 'uploads', 'platform');
+          const uploadsDir = path.join(process.cwd(), 'uploads', 'organization');
           
           await fs.mkdir(uploadsDir, { recursive: true });
           
           const filePath = path.join(uploadsDir, filename);
           await fs.writeFile(filePath, base64Data, 'base64');
           
-          logoURL = `/api/upload/platform/${filename}`;
+          logoURL = `/api/upload/organization/${filename}`;
         }
       } catch (err) {
         console.error("Error saving logo:", err);
@@ -62,15 +62,15 @@ export async function POST(req: Request) {
     }
 
     const userCount = await prisma.user.count();
-    const role = userCount === 0 ? "SUPER_ADMIN" : "USER";
+    const role = userCount === 0 ? "ADMIN" : "PROJECT_ASSISTANT";
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     const user = await prisma.$transaction(async (tx) => {
-      await tx.platform.create({
+      await tx.organization.create({
         data: {
-          name: platformName,
+          name: organizationName,
           logoURL: logoURL,
         }
       });
