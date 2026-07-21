@@ -24,3 +24,7 @@ export function canAccessDepartment(user: SessionUser, departmentId: string): bo
   if (user.role === "FACULTY") return user.departmentId === departmentId
   return false
 }
+
+export function hasRole(user: SessionUser, ...roles: SessionUser["role"][]): boolean {
+  return roles.includes(user.role)
+}

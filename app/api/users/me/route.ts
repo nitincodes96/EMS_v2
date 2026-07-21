@@ -18,6 +18,8 @@ export async function GET() {
       hra: true,
       role: true,
       userType: true,
+      isAvailable: true,
+      availabilitySince: true,
     },
   })
 
@@ -37,6 +39,8 @@ export async function GET() {
       salary,
       role: user.role,
       userType: user.userType,
+      isAvailable: user.isAvailable,
+      availabilitySince: user.availabilitySince,
     },
   })
 }

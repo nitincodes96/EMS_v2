@@ -44,6 +44,13 @@ export async function POST(request: Request) {
       },
     })
 
+    // Checking in also marks the user available/bookable (unified punch-in).
+    // Project Assistants become visible to Faculty/Admin for booking.
+    await prisma.user.update({
+      where: { id: sessionUser.id },
+      data: { isAvailable: true, availabilitySince: now },
+    })
+
     return NextResponse.json({ attendance }, { status: 201 })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

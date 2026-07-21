@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
   engineType = "library"
 }
 
@@ -9,12 +9,12 @@ datasource db {
 }
 
 model Organization {
-  id            String       @id @default(uuid())
-  name          String
-  logoURL       String?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  departments   Department[]
+  id          String       @id @default(uuid())
+  name        String
+  logoURL     String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  departments Department[]
 }
 
 model Department {
@@ -31,6 +31,12 @@ model Department {
   shiftEndTime     String @default("18:00")
   lateGraceMinutes Int    @default(5)
 
+  // Feature flags (FR-2.9)
+  geofenceEnabled  Boolean @default(false)
+  bookingEnabled   Boolean @default(true)
+  bookingStartTime String  @default("09:00")
+  bookingEndTime   String  @default("17:00")
+
   employeeLeaveQuota    Int @default(20)
   internLeaveQuota      Int @default(20)
   contractualLeaveQuota Int @default(20)
@@ -46,6 +52,7 @@ model Department {
   holidays    Holiday[]
   leaves      Leave[]
   attendances Attendance[]
+  bookings    Booking[]
 }
 
 model DepartmentLocation {
@@ -77,10 +84,14 @@ model User {
   status      UserStatus @default(INVITED)
   joiningDate DateTime?
 
+  // PA availability (punch-in) — FR-5.1/5.2
+  isAvailable       Boolean   @default(false)
+  availabilitySince DateTime?
+
   photoUrl     String?
   phoneNumber  String?
-  aadharNumber String? @unique
-  panNumber    String? @unique
+  aadharNumber String?   @unique
+  panNumber    String?   @unique
   dateOfBirth  DateTime?
   resumeUrl    String?
 
@@ -106,8 +117,13 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  leaves      Leave[]
-  attendances Attendance[]
+  leaves          Leave[]
+  attendances     Attendance[]
+  facultyBookings Booking[]      @relation("FacultyBookings")
+  paBookings      Booking[]      @relation("PABookings")
+  approvedLeaves  Leave[]        @relation("LeaveApprover")
+  notifications   Notification[]
+  sessions        UserSession[]
 
   @@index([departmentId])
 }
@@ -120,13 +136,22 @@ model Leave {
   user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   startDate    DateTime    @db.Date
   endDate      DateTime    @db.Date
+  leaveType    LeaveType   @default(CASUAL)
   reason       String?
   status       LeaveStatus @default(PENDING)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+
+  // Approval routing — FR-6.2/6.3/6.4
+  approverId     String?
+  approver       User?     @relation("LeaveApprover", fields: [approverId], references: [id])
+  decisionRemark String?
+  decidedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([departmentId, status])
   @@index([userId])
+  @@index([approverId])
 }
 
 model Attendance {
@@ -144,11 +169,66 @@ model Attendance {
   checkOutLatitude  Float?
   checkOutLongitude Float?
 
+  // FR-3.3: flag when marked outside geofence
+  flaggedOutsideGeofence Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([userId, date])
   @@index([departmentId, date])
+}
+
+model Booking {
+  id           String     @id @default(uuid())
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  facultyId String
+  faculty   User   @relation("FacultyBookings", fields: [facultyId], references: [id], onDelete: Cascade)
+  paId      String
+  pa        User   @relation("PABookings", fields: [paId], references: [id], onDelete: Cascade)
+
+  date      DateTime      @db.Date
+  startTime DateTime
+  endTime   DateTime
+  task      String        @db.Text
+  status    BookingStatus @default(BOOKED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([departmentId, date])
+  @@index([facultyId])
+  @@index([paId])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType @default(GENERAL)
+  title     String
+  message   String           @db.Text
+  isRead    Boolean          @default(false)
+  refId     String?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead])
+}
+
+model UserSession {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device       String?
+  userAgent    String?  @db.Text
+  ipAddress    String?
+  isSuspended  Boolean  @default(false)
+  lastActivity DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Holiday {
@@ -186,6 +266,28 @@ enum LeaveStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum LeaveType {
+  CASUAL
+  SICK
+  EARNED
+  UNPAID
+  OTHER
+}
+
+enum BookingStatus {
+  BOOKED
+  COMPLETED
+  ABSENT
+  CANCELLED
+}
+
+enum NotificationType {
+  GENERAL
+  BOOKING
+  LEAVE
+  SESSION
 }
 
 enum HolidayType {

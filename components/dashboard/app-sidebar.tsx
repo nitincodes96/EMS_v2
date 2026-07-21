@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import {
-  Activity,
   Building2,
+  CalendarPlus,
+  ClipboardList,
   LayoutDashboard,
   LogOut,
   Settings,
@@ -31,92 +32,30 @@ import {
 
 const NAV_ITEMS = {
   ADMIN: [
-    {
-      title: "Dashboard",
-      url: "/admin/dashboard",
-      icon: LayoutDashboard,
-    },
-    {
-      title: "Departments",
-      url: "/admin/departments",
-      icon: Building2,
-    },
-    {
-      title: "Users",
-      url: "/admin/users",
-      icon: Users,
-    },
-    {
-      title: "Attendance",
-      url: "/admin/attendance",
-      icon: Watch,
-    },
-    {
-      title: "System Logs",
-      url: "/admin/logs",
-      icon: Activity,
-    },
-    {
-      title: "Settings",
-      url: "/admin/settings",
-      icon: Settings,
-    },
+    { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard },
+    { title: "Departments", url: "/admin/departments", icon: Building2 },
+    { title: "Users", url: "/admin/users", icon: Users },
+    { title: "Attendance", url: "/admin/attendance", icon: Watch },
+    { title: "Bookings", url: "/admin/bookings", icon: ClipboardList },
+    { title: "Leave", url: "/admin/leave", icon: Calendar },
+    { title: "Settings", url: "/admin/settings", icon: Settings },
   ],
 
   FACULTY: [
-    {
-      title: "Dashboard",
-      url: "/faculty/dashboard",
-      icon: LayoutDashboard,
-    },
-    {
-      title: "Users",
-      url: "/faculty/users",
-      icon: Users,
-    },
-    {
-      title: "Attendance",
-      url: "/faculty/attendance",
-      icon: Watch,
-    },
-    {
-      title: "Leave",
-      url: "/faculty/leave",
-      icon: Calendar,
-    },
-    {
-      title: "System Logs",
-      url: "/faculty/logs",
-      icon: Activity,
-    },
-    {
-      title: "Settings",
-      url: "/faculty/settings",
-      icon: Settings,
-    },
+    { title: "Dashboard", url: "/faculty/dashboard", icon: LayoutDashboard },
+    { title: "Attendance", url: "/faculty/attendance", icon: Watch },
+    { title: "Book a PA", url: "/faculty/book-pa", icon: CalendarPlus },
+    { title: "Bookings", url: "/faculty/bookings", icon: ClipboardList },
+    { title: "Leave", url: "/faculty/leave", icon: Calendar },
+    { title: "Settings", url: "/faculty/settings", icon: Settings },
   ],
 
   PROJECT_ASSISTANT: [
-    {
-      title: "Dashboard",
-      url: "/project-assistant/dashboard",
-      icon: LayoutDashboard,
-    },
-    {
-      title: "Attendance",
-      url: "/project-assistant/attendance",
-      icon: Watch,
-    },
-    {
-      title: "Leave",
-      url: "/project-assistant/leave",
-      icon: Calendar,
-    },
-    {
-      title: "Settings",
-      url: "/project-assistant/settings",
-      icon: Settings,
-    },
+    { title: "Dashboard", url: "/project-assistant/dashboard", icon: LayoutDashboard },
+    { title: "Attendance", url: "/project-assistant/attendance", icon: Watch },
+    { title: "My Tasks", url: "/project-assistant/tasks", icon: ClipboardList },
+    { title: "Leave", url: "/project-assistant/leave", icon: Calendar },
+    { title: "Settings", url: "/project-assistant/settings", icon: Settings },
   ],
 } as const;
 

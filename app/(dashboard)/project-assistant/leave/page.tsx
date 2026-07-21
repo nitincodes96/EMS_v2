@@ -1,7 +1,5 @@
+import { LeavePanel } from "@/components/dashboard/leave-panel"
+
 export default function LeavePage() {
-    return (
-        <div>
-            <h1>Leave</h1>
-        </div>
-    );
+  return <LeavePanel />
 }

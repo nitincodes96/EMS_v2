@@ -72,6 +72,11 @@ export async function GET() {
 
   const balance = Math.max(totalQuota - usedLeaveDays, 0)
 
+  const allLeaves = await prisma.leave.findMany({
+    where: { userId: user.id },
+    orderBy: { startDate: "desc" },
+  })
+
   return NextResponse.json({
     summary: {
       totalQuota,
@@ -86,6 +91,16 @@ export async function GET() {
       endDate: leave.endDate,
       status: leave.status,
     })),
+    leaves: allLeaves.map((leave) => ({
+      id: leave.id,
+      leaveType: leave.leaveType,
+      reason: leave.reason,
+      startDate: leave.startDate,
+      endDate: leave.endDate,
+      status: leave.status,
+      decisionRemark: leave.decisionRemark,
+      createdAt: leave.createdAt,
+    })),
   })
 }
 
@@ -97,7 +112,12 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { startDate, endDate, reason } = body as { startDate: string; endDate: string; reason?: string }
+    const { startDate, endDate, reason, leaveType } = body as {
+      startDate: string
+      endDate: string
+      reason?: string
+      leaveType?: string
+    }
 
     if (!startDate || !endDate) {
       return NextResponse.json({ error: "startDate and endDate are required" }, { status: 400 })
@@ -109,12 +129,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid date range" }, { status: 400 })
     }
 
+    const VALID_LEAVE_TYPES = ["CASUAL", "SICK", "EARNED", "UNPAID", "OTHER"] as const
+    const resolvedType = VALID_LEAVE_TYPES.includes(leaveType as (typeof VALID_LEAVE_TYPES)[number])
+      ? (leaveType as (typeof VALID_LEAVE_TYPES)[number])
+      : "CASUAL"
+
     const leave = await prisma.leave.create({
       data: {
         departmentId: sessionUser.departmentId,
         userId: sessionUser.id,
         startDate: start,
         endDate: end,
+        leaveType: resolvedType,
         reason: reason || null,
         status: "PENDING",
       },

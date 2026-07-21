@@ -53,6 +53,12 @@ export async function POST(request: Request) {
       },
     })
 
+    // Checking out ends availability — the user is no longer bookable.
+    await prisma.user.update({
+      where: { id: sessionUser.id },
+      data: { isAvailable: false, availabilitySince: null },
+    })
+
     return NextResponse.json({ attendance })
   } catch (error) {
     console.error("Error checking out:", error)
