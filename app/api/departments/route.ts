@@ -55,12 +55,6 @@ export async function POST(request: Request) {
     const shiftStartTime = (formData.get("shiftStartTime") as string) || "09:00"
     const shiftEndTime = (formData.get("shiftEndTime") as string) || "18:00"
     const lateGraceMinutes = parseInt((formData.get("lateGraceMinutes") as string) || "5", 10)
-    const employeeLeaveQuota = parseInt((formData.get("employeeLeaveQuota") as string) || "20", 10)
-    const internLeaveQuota = parseInt((formData.get("internLeaveQuota") as string) || "20", 10)
-    const contractualLeaveQuota = parseInt((formData.get("contractualLeaveQuota") as string) || "20", 10)
-    const employeeMonthlyCap = parseInt((formData.get("employeeMonthlyCap") as string) || "5", 10)
-    const internMonthlyCap = parseInt((formData.get("internMonthlyCap") as string) || "3", 10)
-    const contractualMonthlyCap = parseInt((formData.get("contractualMonthlyCap") as string) || "4", 10)
 
     let locations: LocationInput[] = []
     const locationsRaw = formData.get("locations") as string | null
@@ -106,12 +100,6 @@ export async function POST(request: Request) {
         shiftStartTime,
         shiftEndTime,
         lateGraceMinutes,
-        employeeLeaveQuota,
-        internLeaveQuota,
-        contractualLeaveQuota,
-        employeeMonthlyCap,
-        internMonthlyCap,
-        contractualMonthlyCap,
         locations: {
           createMany: {
             data: locations.map((l) => ({

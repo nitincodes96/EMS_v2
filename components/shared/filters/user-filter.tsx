@@ -40,12 +40,10 @@ export function UserFilter({
   departments = [],
   filterOrg,
   filterRole,
-  filterUserType,
   filterMonth,
   filterYear,
   onOrgChange,
   onRoleChange,
-  onUserTypeChange,
   onMonthChange,
   onYearChange,
   exportData,
@@ -55,12 +53,10 @@ export function UserFilter({
   departments?: { id: string; name: string }[]
   filterOrg?: string
   filterRole: string
-  filterUserType: string
   filterMonth: string
   filterYear: string
   onOrgChange?: (v: string) => void
   onRoleChange: (v: string) => void
-  onUserTypeChange: (v: string) => void
   onMonthChange: (v: string) => void
   onYearChange: (v: string) => void
   exportData: Record<string, string | number>[]
@@ -105,19 +101,6 @@ export function UserFilter({
             <SelectItem value="all">All Roles</SelectItem>
             <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
             <SelectItem value="FACULTY">Faculty</SelectItem>
-          </SelectContent>
-        </Select>
-      </FilterBlock>
-      <FilterBlock label="User Type">
-        <Select value={filterUserType} onValueChange={(v) => v && onUserTypeChange(v)}>
-          <SelectTrigger className="h-7 w-28 text-[11px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            <SelectItem value="EMPLOYEE">Employee</SelectItem>
-            <SelectItem value="INTERN">Intern</SelectItem>
-            <SelectItem value="CONTRACTUAL">Contractual</SelectItem>
           </SelectContent>
         </Select>
       </FilterBlock>

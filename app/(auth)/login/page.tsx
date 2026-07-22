@@ -17,7 +17,7 @@ import { AuthShell } from "@/components/auth/auth-shell";
 
 function LoginForm({ organizationName, logoUrl }: { organizationName: string; logoUrl: string | null }) {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -29,7 +29,7 @@ function LoginForm({ organizationName, logoUrl }: { organizationName: string; lo
     try {
       const res = await signIn("credentials", {
         redirect: false,
-        email,
+        identifier,
         password,
       });
 
@@ -37,7 +37,7 @@ function LoginForm({ organizationName, logoUrl }: { organizationName: string; lo
         if (res.error === "ACCOUNT_DEACTIVATED") {
           toast.error("Your account has been deactivated. Contact your administrator.");
         } else if (res.error === "USER_NOT_FOUND") {
-          toast.error("No account found for that email address.");
+          toast.error("No account found for that email or employee code.");
         } else if (res.error === "INVALID_PASSWORD") {
           toast.error("Incorrect password. Please try again.");
         } else if (res.error === "MISSING_CREDENTIALS") {
@@ -72,13 +72,13 @@ function LoginForm({ organizationName, logoUrl }: { organizationName: string; lo
       <form onSubmit={onSubmit} className="mt-8 space-y-5">
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-slate-700">Email Address</Label>
+            <Label htmlFor="identifier" className="text-slate-700">Email or Employee Code</Label>
             <Input
-              id="email"
-              type="email"
-              placeholder="admin@department.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="identifier"
+              type="text"
+              placeholder="admin@department.com or employee code"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               required
               className="rounded-md"
             />
@@ -138,6 +138,7 @@ function InviteAcceptForm({ token, organizationName, logoUrl }: { token: string;
   const [checking, setChecking] = useState(true);
   const [inviteError, setInviteError] = useState("");
   const [email, setEmail] = useState("");
+  const [empCode, setEmpCode] = useState("");
   const [departmentName, setDepartmentName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -152,7 +153,8 @@ function InviteAcceptForm({ token, organizationName, logoUrl }: { token: string;
           setInviteError(data.error || "This invite link is invalid or has expired.");
           return;
         }
-        setEmail(data.email);
+        setEmail(data.email || "");
+        setEmpCode(data.empCode || "");
         setDepartmentName(data.departmentName);
       })
       .catch(() => setInviteError("This invite link is invalid or has expired."))
@@ -185,7 +187,7 @@ function InviteAcceptForm({ token, organizationName, logoUrl }: { token: string;
         return;
       }
 
-      const signInRes = await signIn("credentials", { redirect: false, email, password });
+      const signInRes = await signIn("credentials", { redirect: false, identifier: email || empCode, password });
       if (signInRes?.error) {
         toast.success("Password configured. Please sign in.");
         router.push("/login");
@@ -223,8 +225,8 @@ function InviteAcceptForm({ token, organizationName, logoUrl }: { token: string;
 
       <form onSubmit={onSubmit} className="mt-8 space-y-5">
         <div className="space-y-2">
-          <Label htmlFor="invite-email" className="text-slate-700">Email Address</Label>
-          <Input id="invite-email" type="email" value={email} disabled className="rounded-md bg-slate-50" />
+          <Label htmlFor="invite-email" className="text-slate-700">{email ? "Email Address" : "Employee Code"}</Label>
+          <Input id="invite-email" type="text" value={email || empCode} disabled className="rounded-md bg-slate-50" />
         </div>
 
         <div className="space-y-2">

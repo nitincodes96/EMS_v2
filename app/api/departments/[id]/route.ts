@@ -31,12 +31,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const shiftStartTime = (formData.get("shiftStartTime") as string) || existing.shiftStartTime
     const shiftEndTime = (formData.get("shiftEndTime") as string) || existing.shiftEndTime
     const lateGraceMinutes = parseInt((formData.get("lateGraceMinutes") as string) || String(existing.lateGraceMinutes), 10)
-    const employeeLeaveQuota = parseInt((formData.get("employeeLeaveQuota") as string) || String(existing.employeeLeaveQuota), 10)
-    const internLeaveQuota = parseInt((formData.get("internLeaveQuota") as string) || String(existing.internLeaveQuota), 10)
-    const contractualLeaveQuota = parseInt((formData.get("contractualLeaveQuota") as string) || String(existing.contractualLeaveQuota), 10)
-    const employeeMonthlyCap = parseInt((formData.get("employeeMonthlyCap") as string) || String(existing.employeeMonthlyCap), 10)
-    const internMonthlyCap = parseInt((formData.get("internMonthlyCap") as string) || String(existing.internMonthlyCap), 10)
-    const contractualMonthlyCap = parseInt((formData.get("contractualMonthlyCap") as string) || String(existing.contractualMonthlyCap), 10)
 
     let locations: LocationInput[] | null = null
     const locationsRaw = formData.get("locations") as string | null
@@ -64,12 +58,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           shiftStartTime,
           shiftEndTime,
           lateGraceMinutes,
-          employeeLeaveQuota,
-          internLeaveQuota,
-          contractualLeaveQuota,
-          employeeMonthlyCap,
-          internMonthlyCap,
-          contractualMonthlyCap,
           ...(logoUrl ? { logoUrl } : {}),
         },
       })

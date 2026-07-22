@@ -20,7 +20,6 @@ import {
   ChevronRight,
   Clock,
   Fingerprint,
-  IndianRupee,
   LogIn,
   LogOut,
   PartyPopper,
@@ -71,9 +70,7 @@ type AttendanceSummary = {
 } | null
 
 type LeaveSummary = {
-  totalQuota: number
   usedLeaveDays: number
-  balance: number
   pendingLeaves: number
 } | null
 
@@ -94,15 +91,6 @@ type DepartmentSummary = {
   shiftEndTime: string
   workingDays: string
   holidays: HolidaySummary[]
-}
-
-type UserSalarySummary = {
-  id: string
-  name: string | null
-  username: string
-  basicSalary: number | null
-  hra: number | null
-  salary: number
 }
 
 // Attendance map for the calendar. Key: yyyy-MM-dd
@@ -162,7 +150,6 @@ export default function UserDashboard() {
   const [month, setMonth] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<Date | null>(new Date())
   const [department, setDepartment] = useState<DepartmentSummary | null>(null)
-  const [userSalary, setUserSalary] = useState<UserSalarySummary | null>(null)
   const [attendance, setAttendance] = useState<AttendanceSummary>(null)
   const [leaveSummary, setLeaveSummary] = useState<LeaveSummary>(null)
   const [upcomingLeaves, setUpcomingLeaves] = useState<UpcomingLeaveSummary[]>([])
@@ -197,11 +184,8 @@ export default function UserDashboard() {
     [month, department]
   )
 
-  const leaveBalance = leaveSummary?.balance ?? 0
-  const leaveQuota = leaveSummary?.totalQuota ?? 0
   const leaveUsed = leaveSummary?.usedLeaveDays ?? 0
   const pendingLeaves = leaveSummary?.pendingLeaves ?? 0
-  const leaveUsagePercent = leaveQuota > 0 ? Math.min((leaveUsed / leaveQuota) * 100, 100) : 0
 
   useEffect(() => {
     if (sessionStatus === "loading") {
@@ -219,12 +203,9 @@ export default function UserDashboard() {
           fetch("/api/leaves"),
         ])
 
-        const userSalaryResponse = await fetch("/api/users/me")
-
         const departmentData = await departmentResponse.json()
         const attendanceData = await attendanceResponse.json()
         const leavesData = await leavesResponse.json()
-        const userSalaryData = await userSalaryResponse.json()
 
         if (!active) {
           return
@@ -241,10 +222,6 @@ export default function UserDashboard() {
         if (leavesResponse.ok) {
           setLeaveSummary(leavesData.summary)
           setUpcomingLeaves(leavesData.upcomingLeaves || [])
-        }
-
-        if (userSalaryResponse.ok && userSalaryData?.user) {
-          setUserSalary(userSalaryData.user)
         }
       } catch (loadError) {
         console.error("Failed to load dashboard data:", loadError)
@@ -317,9 +294,6 @@ export default function UserDashboard() {
 
   const displayName = session?.user?.name ?? "there"
   const departmentName = department?.name ?? "your department"
-  const salaryAmount = userSalary?.salary ?? 0
-  const salaryBasic = userSalary?.basicSalary ?? 0
-  const salaryHra = userSalary?.hra ?? 0
 
   return (
     <TooltipProvider delay={0}>
@@ -418,48 +392,33 @@ export default function UserDashboard() {
                 {pendingLeaves} pending
               </span>
             </div>
-            <p className="mt-4 text-2xl font-semibold text-slate-900">{leaveBalance} days</p>
-            <p className="text-sm text-slate-500">Leave Balance</p>
-            <div className="mt-4 space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>Used this year</span>
-                <span>{leaveUsed}/{leaveQuota || "—"}</span>
-              </div>
-              <div className="h-2 rounded-full bg-slate-100">
-                <div
-                  className="h-2 rounded-full bg-violet-500 transition-all"
-                  style={{ width: `${leaveUsagePercent}%` }}
-                />
-              </div>
-              <p className="text-xs text-slate-400">
-                Tracks approved leave days against your annual quota.
-              </p>
-            </div>
+            <p className="mt-4 text-2xl font-semibold text-slate-900">{leaveUsed} days</p>
+            <p className="text-sm text-slate-500">Leave Taken This Year</p>
+            <p className="mt-4 text-xs text-slate-400">
+              Leave is unlimited — this tracks approved days taken, not a quota.
+            </p>
           </div>
 
           {/* Department snapshot */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-indigo-50 text-indigo-600">
-                <IndianRupee className="h-5 w-5" />
+                <Users className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900">Salary</p>
-                <p className="truncate text-xs text-slate-400">Current monthly pay in rupees</p>
+                <p className="truncate text-sm font-semibold text-slate-900">Department</p>
+                <p className="truncate text-xs text-slate-400">Shift schedule and working days</p>
               </div>
             </div>
-            <p className="mt-4 text-2xl font-semibold text-slate-900">
-              ₹{salaryAmount.toLocaleString("en-IN")}
-            </p>
-            <p className="text-sm text-slate-500">{userSalary?.name || userSalary?.username || displayName}</p>
+            <p className="mt-4 text-2xl font-semibold text-slate-900">{departmentName}</p>
             <div className="mt-4 space-y-2 text-xs text-slate-400">
               <div className="flex items-center justify-between">
-                <span>Basic</span>
-                <span>₹{salaryBasic.toLocaleString("en-IN")}</span>
+                <span>Shift</span>
+                <span>{department?.shiftStartTime ?? "—"} – {department?.shiftEndTime ?? "—"}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>HRA</span>
-                <span>₹{salaryHra.toLocaleString("en-IN")}</span>
+                <span>Working days</span>
+                <span>{department?.workingDays ?? "—"}</span>
               </div>
             </div>
           </div>

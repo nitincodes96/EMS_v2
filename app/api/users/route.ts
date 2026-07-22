@@ -15,7 +15,6 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const departmentIdParam = searchParams.get("departmentId")
   const role = searchParams.get("role")
-  const userType = searchParams.get("userType")
   const excludeUserId = searchParams.get("excludeUserId")
 
   const where: Record<string, unknown> = { role: { not: "ADMIN" } }
@@ -27,7 +26,6 @@ export async function GET(request: Request) {
   }
 
   if (role) where.role = role
-  if (userType) where.userType = userType
   if (excludeUserId) where.id = { not: excludeUserId }
 
   const users = await prisma.user.findMany({
@@ -50,12 +48,14 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData()
 
-    const email = String(formData.get("email") || "").trim().toLowerCase()
+    let role = String(formData.get("role") || "PROJECT_ASSISTANT")
+    if (role === "ADMIN") role = "PROJECT_ASSISTANT"
+
     const name = String(formData.get("name") || "").trim()
     const departmentId = String(formData.get("departmentId") || "")
 
-    if (!email || !departmentId) {
-      return NextResponse.json({ error: "Email and department are required" }, { status: 400 })
+    if (!departmentId) {
+      return NextResponse.json({ error: "Department is required" }, { status: 400 })
     }
 
     if (!canAccessDepartment(sessionUser, departmentId)) {
@@ -67,49 +67,58 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Department not found" }, { status: 404 })
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } })
-    if (existing) {
-      return NextResponse.json({ error: "A user with this email already exists" }, { status: 400 })
-    }
-
-    let role = String(formData.get("role") || "PROJECT_ASSISTANT")
-    if (role === "ADMIN") role = "PROJECT_ASSISTANT"
-
-    let userType = String(formData.get("userType") || "EMPLOYEE") as "EMPLOYEE" | "INTERN" | "CONTRACTUAL"
-    if (role === "FACULTY") userType = "EMPLOYEE"
-
-    const phoneNumber = (formData.get("phoneNumber") as string) || null
-    const aadharNumber = (formData.get("aadharNumber") as string) || null
-    const panNumber = (formData.get("panNumber") as string) || null
-    const dateOfBirthRaw = formData.get("dateOfBirth") as string | null
-    const dateOfBirth = dateOfBirthRaw ? new Date(dateOfBirthRaw) : null
-
-    const basicSalaryRaw = formData.get("basicSalary") as string | null
-    const hraRaw = formData.get("hra") as string | null
-    const tdsPercentRaw = formData.get("tdsPercent") as string | null
-    const pfPercentRaw = formData.get("pfPercent") as string | null
-    const lopEnabled = (formData.get("lopEnabled") as string | null) !== "false"
-
-    const baseLeaveQuota =
-      userType === "INTERN"
-        ? department.internLeaveQuota
-        : userType === "CONTRACTUAL"
-        ? department.contractualLeaveQuota
-        : department.employeeLeaveQuota
-
-    const username = name || email.split("@")[0]
-
     let photoUrl: string | null = null
     const photo = formData.get("photo") as File | null
     if (photo && photo.size > 0) {
       photoUrl = await saveUploadedFile(photo, "users")
     }
 
-    let resumeUrl: string | null = null
-    const resume = formData.get("resume") as File | null
-    if (resume && resume.size > 0) {
-      resumeUrl = await saveUploadedFile(resume, "resumes")
+    if (role === "FACULTY") {
+      const empCode = String(formData.get("empCode") || "").trim()
+      if (!empCode) {
+        return NextResponse.json({ error: "Employee code is required" }, { status: 400 })
+      }
+
+      const existingEmpCode = await prisma.user.findUnique({ where: { empCode } })
+      if (existingEmpCode) {
+        return NextResponse.json({ error: "A user with this employee code already exists" }, { status: 400 })
+      }
+
+      const { token: inviteToken, expiry: inviteTokenExpiry } = generateInviteToken()
+
+      const user = await prisma.user.create({
+        data: {
+          empCode,
+          username: empCode,
+          name: name || null,
+          password: null,
+          role: "FACULTY",
+          departmentId,
+          isVerified: true,
+          status: "INVITED",
+          inviteToken,
+          inviteTokenExpiry,
+          photoUrl,
+        },
+      })
+
+      const inviteLink = `${process.env.NEXT_PUBLIC_BASE_URL}/login?invite=${inviteToken}`
+      const { password: _password, inviteToken: _inviteToken, otp: _otp, ...userWithoutSensitiveFields } = user
+      return NextResponse.json({ user: userWithoutSensitiveFields, inviteLink }, { status: 201 })
     }
+
+    const email = String(formData.get("email") || "").trim().toLowerCase()
+    if (!email) {
+      return NextResponse.json({ error: "Email is required" }, { status: 400 })
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email } })
+    if (existing) {
+      return NextResponse.json({ error: "A user with this email already exists" }, { status: 400 })
+    }
+
+    const phoneNumber = (formData.get("phoneNumber") as string) || null
+    const username = name || email.split("@")[0]
 
     const { token: inviteToken, expiry: inviteTokenExpiry } = generateInviteToken()
 
@@ -119,25 +128,14 @@ export async function POST(request: Request) {
         username,
         name: name || null,
         password: null,
-        role: role as "FACULTY" | "PROJECT_ASSISTANT",
-        userType,
+        role: "PROJECT_ASSISTANT",
         departmentId,
         isVerified: true,
         status: "INVITED",
         inviteToken,
         inviteTokenExpiry,
         phoneNumber,
-        aadharNumber,
-        panNumber,
-        dateOfBirth,
         photoUrl,
-        resumeUrl,
-        baseLeaveQuota,
-        basicSalary: basicSalaryRaw ? parseFloat(basicSalaryRaw) : null,
-        hra: hraRaw ? parseFloat(hraRaw) : null,
-        tdsPercent: tdsPercentRaw ? parseFloat(tdsPercentRaw) : null,
-        pfPercent: pfPercentRaw ? parseFloat(pfPercentRaw) : null,
-        lopEnabled,
       },
     })
 

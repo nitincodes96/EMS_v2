@@ -20,6 +20,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
 
   return NextResponse.json({
     email: user.email,
+    empCode: user.empCode,
     departmentName: user.department?.name ?? "",
   })
 }

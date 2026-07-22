@@ -37,13 +37,6 @@ model Department {
   bookingStartTime String  @default("09:00")
   bookingEndTime   String  @default("17:00")
 
-  employeeLeaveQuota    Int @default(20)
-  internLeaveQuota      Int @default(20)
-  contractualLeaveQuota Int @default(20)
-  employeeMonthlyCap    Int @default(5)
-  internMonthlyCap      Int @default(3)
-  contractualMonthlyCap Int @default(4)
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -71,7 +64,8 @@ model DepartmentLocation {
 
 model User {
   id           String      @id @default(uuid())
-  email        String      @unique
+  email        String?     @unique
+  empCode      String?     @unique
   username     String
   name         String?
   password     String?
@@ -79,7 +73,6 @@ model User {
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id])
 
-  userType    UserType   @default(EMPLOYEE)
   isActive    Boolean    @default(true)
   status      UserStatus @default(INVITED)
   joiningDate DateTime?
@@ -90,19 +83,6 @@ model User {
 
   photoUrl     String?
   phoneNumber  String?
-  aadharNumber String?   @unique
-  panNumber    String?   @unique
-  dateOfBirth  DateTime?
-  resumeUrl    String?
-
-  baseLeaveQuota  Int @default(0)
-  extraLeaveQuota Int @default(0)
-
-  basicSalary Float?
-  hra         Float?
-  tdsPercent  Float?
-  pfPercent   Float?
-  lopEnabled  Boolean @default(true)
 
   isVerified Boolean   @default(false)
   otp        String?
@@ -249,12 +229,6 @@ enum Role {
   ADMIN
   FACULTY
   PROJECT_ASSISTANT
-}
-
-enum UserType {
-  EMPLOYEE
-  INTERN
-  CONTRACTUAL
 }
 
 enum UserStatus {

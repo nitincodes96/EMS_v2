@@ -19,9 +19,6 @@ export async function GET() {
       id: true,
       name: true,
       username: true,
-      userType: true,
-      baseLeaveQuota: true,
-      extraLeaveQuota: true,
       departmentId: true,
     },
   })
@@ -30,7 +27,6 @@ export async function GET() {
     return NextResponse.json({ error: "User not found" }, { status: 404 })
   }
 
-  const totalQuota = user.baseLeaveQuota + user.extraLeaveQuota
   const yearStart = startOfYear(new Date())
   const yearEnd = endOfYear(new Date())
 
@@ -70,8 +66,6 @@ export async function GET() {
     return total + Math.max(countLeaveDays(overlapStart, overlapEnd), 0)
   }, 0)
 
-  const balance = Math.max(totalQuota - usedLeaveDays, 0)
-
   const allLeaves = await prisma.leave.findMany({
     where: { userId: user.id },
     orderBy: { startDate: "desc" },
@@ -79,9 +73,7 @@ export async function GET() {
 
   return NextResponse.json({
     summary: {
-      totalQuota,
       usedLeaveDays,
-      balance,
       pendingLeaves,
     },
     upcomingLeaves: upcomingLeaves.map((leave) => ({

@@ -68,12 +68,6 @@ interface Department {
     shiftEndTime: string
     lateGraceMinutes: number
     locations: OrgLocation[]
-    employeeLeaveQuota: number
-    internLeaveQuota: number
-    contractualLeaveQuota: number
-    employeeMonthlyCap: number
-    internMonthlyCap: number
-    contractualMonthlyCap: number
     createdAt: string
     adminCount: number
     userCount: number
@@ -93,7 +87,7 @@ const GRACE_OPTIONS = [
     { label: "30 min", value: 30 },
 ]
 
-const STEPS = ["Basic Info", "Work Schedule", "Geo-fence", "Leave Quotas", "Holiday Calendar", "Review"]
+const STEPS = ["Basic Info", "Work Schedule", "Geo-fence", "Holiday Calendar", "Review"]
 
 interface DraftLocation {
     name: string
@@ -111,12 +105,6 @@ const defaultFormData = {
     lateGraceMinutes: 5,
     locations: [] as DraftLocation[],
     holidays: [] as HolidayCsvRow[],
-    employeeLeaveQuota: 20,
-    internLeaveQuota: 20,
-    contractualLeaveQuota: 20,
-    employeeMonthlyCap: 5,
-    internMonthlyCap: 3,
-    contractualMonthlyCap: 4,
 }
 
 const AVATAR_COLORS = [
@@ -501,12 +489,6 @@ function CreateOrgWizard({
                         .map(({ name, date, type }) => ({ name, date, type }))
                 )
             )
-            payload.append("employeeLeaveQuota", String(formData.employeeLeaveQuota))
-            payload.append("internLeaveQuota", String(formData.internLeaveQuota))
-            payload.append("contractualLeaveQuota", String(formData.contractualLeaveQuota))
-            payload.append("employeeMonthlyCap", String(formData.employeeMonthlyCap))
-            payload.append("internMonthlyCap", String(formData.internMonthlyCap))
-            payload.append("contractualMonthlyCap", String(formData.contractualMonthlyCap))
             if (logoFile) payload.append("logo", logoFile)
 
             const res = await fetch("/api/departments", { method: "POST", body: payload })
@@ -527,7 +509,6 @@ function CreateOrgWizard({
         { icon: <Building2 className="h-4 w-4" />, title: "Basic Info", hint: "Name and description" },
         { icon: <Clock className="h-4 w-4" />, title: "Work Schedule", hint: "Shift times and working days" },
         { icon: <MapPin className="h-4 w-4" />, title: "Geo-fence", hint: "Check-in / check-out locations" },
-        { icon: <Calendar className="h-4 w-4" />, title: "Leave Quotas", hint: "Yearly quotas and monthly caps" },
         { icon: <CalendarDays className="h-4 w-4" />, title: "Holiday Calendar", hint: "Optional CSV import" },
         { icon: <CheckCircle2 className="h-4 w-4" />, title: "Review", hint: "Confirm and create" },
     ]
@@ -672,81 +653,13 @@ function CreateOrgWizard({
                 )}
 
                 {step === 4 && (
-                    <div className="space-y-5">
-                        <div className="space-y-3">
-                            <div className="flex items-center gap-2">
-                                <span className="h-px flex-1 bg-slate-100" />
-                                <p className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                                    Yearly quota (days)
-                                </p>
-                                <span className="h-px flex-1 bg-slate-100" />
-                            </div>
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                {(
-                                    [
-                                        { label: "Employee", key: "employeeLeaveQuota", color: "bg-emerald-50 text-emerald-600" },
-                                        { label: "Intern", key: "internLeaveQuota", color: "bg-amber-50 text-amber-600" },
-                                        { label: "Contractual", key: "contractualLeaveQuota", color: "bg-violet-50 text-violet-600" },
-                                    ] as const
-                                ).map(({ label, key, color }) => (
-                                    <div key={key} className="space-y-1.5">
-                                        <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", color)}>
-                                            {label}
-                                        </span>
-                                        <Input
-                                            type="number"
-                                            min="0"
-                                            className="text-center font-semibold"
-                                            value={formData[key]}
-                                            onChange={(e) => set(key, parseInt(e.target.value) || 0)}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="space-y-3">
-                            <div className="flex items-center gap-2">
-                                <span className="h-px flex-1 bg-slate-100" />
-                                <p className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                                    Monthly cap (days)
-                                </p>
-                                <span className="h-px flex-1 bg-slate-100" />
-                            </div>
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                {(
-                                    [
-                                        { label: "Employee", key: "employeeMonthlyCap", color: "bg-emerald-50 text-emerald-600" },
-                                        { label: "Intern", key: "internMonthlyCap", color: "bg-amber-50 text-amber-600" },
-                                        { label: "Contractual", key: "contractualMonthlyCap", color: "bg-violet-50 text-violet-600" },
-                                    ] as const
-                                ).map(({ label, key, color }) => (
-                                    <div key={key} className="space-y-1.5">
-                                        <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", color)}>
-                                            {label}
-                                        </span>
-                                        <Input
-                                            type="number"
-                                            min="0"
-                                            className="text-center font-semibold"
-                                            value={formData[key]}
-                                            onChange={(e) => set(key, parseInt(e.target.value) || 0)}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {step === 5 && (
                     <HolidayCsvStep
                         holidays={formData.holidays}
                         onChange={(holidays) => set("holidays", holidays)}
                     />
                 )}
 
-                {step === 6 && (
+                {step === 5 && (
                     <div className="space-y-3">
                         <ReviewRow icon={<Building2 className="h-4 w-4" />} label="Name" value={formData.name} />
                         {logoFile && <ReviewRow label="Logo" value={logoFile.name} />}
@@ -781,24 +694,6 @@ function CreateOrgWizard({
                                         ? `${formData.locations.length} location${formData.locations.length > 1 ? "s" : ""} configured`
                                         : "Not configured"
                                 }
-                            />
-                        </div>
-
-                        <div className="space-y-2 pt-1">
-                            <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                                Leave quotas (yearly / monthly cap)
-                            </p>
-                            <ReviewRow
-                                label="Employee"
-                                value={`${formData.employeeLeaveQuota}d yearly · ${formData.employeeMonthlyCap}d/mo`}
-                            />
-                            <ReviewRow
-                                label="Intern"
-                                value={`${formData.internLeaveQuota}d yearly · ${formData.internMonthlyCap}d/mo`}
-                            />
-                            <ReviewRow
-                                label="Contractual"
-                                value={`${formData.contractualLeaveQuota}d yearly · ${formData.contractualMonthlyCap}d/mo`}
                             />
                         </div>
 
@@ -885,12 +780,6 @@ function EditOrgDialog({
             longitude: String(l.longitude),
             radiusMeters: l.radiusMeters,
         })) as DraftLocation[],
-        employeeLeaveQuota: org.employeeLeaveQuota,
-        internLeaveQuota: org.internLeaveQuota,
-        contractualLeaveQuota: org.contractualLeaveQuota,
-        employeeMonthlyCap: org.employeeMonthlyCap,
-        internMonthlyCap: org.internMonthlyCap,
-        contractualMonthlyCap: org.contractualMonthlyCap,
     })
     const [logoFile, setLogoFile] = useState<File | null>(null)
     const [logoPreview, setLogoPreview] = useState<string | null>(org.logoUrl || null)
@@ -956,12 +845,6 @@ function EditOrgDialog({
                     }))
                 )
             )
-            payload.append("employeeLeaveQuota", String(form.employeeLeaveQuota))
-            payload.append("internLeaveQuota", String(form.internLeaveQuota))
-            payload.append("contractualLeaveQuota", String(form.contractualLeaveQuota))
-            payload.append("employeeMonthlyCap", String(form.employeeMonthlyCap))
-            payload.append("internMonthlyCap", String(form.internMonthlyCap))
-            payload.append("contractualMonthlyCap", String(form.contractualMonthlyCap))
             if (logoFile) payload.append("logo", logoFile)
 
             const res = await fetch(`/api/departments/${org.id}`, { method: "PATCH", body: payload })
@@ -982,7 +865,7 @@ function EditOrgDialog({
         <form onSubmit={handleSubmit} className="flex flex-col">
             <Tabs defaultValue="basic">
                 <div className="px-5 pb-0 pt-3">
-                    <TabsList className="grid w-full grid-cols-2 gap-1 sm:grid-cols-4">
+                    <TabsList className="grid w-full grid-cols-3">
                         <TabsTrigger value="basic" className="gap-1.5 text-xs">
                             <Building2 className="h-3.5 w-3.5" /> Basic
                         </TabsTrigger>
@@ -991,9 +874,6 @@ function EditOrgDialog({
                         </TabsTrigger>
                         <TabsTrigger value="geofence" className="gap-1.5 text-xs">
                             <MapPin className="h-3.5 w-3.5" /> Geo-fence
-                        </TabsTrigger>
-                        <TabsTrigger value="quotas" className="gap-1.5 text-xs">
-                            <Calendar className="h-3.5 w-3.5" /> Quotas
                         </TabsTrigger>
                     </TabsList>
                 </div>
@@ -1096,61 +976,6 @@ function EditOrgDialog({
                     />
                 </TabsContent>
 
-                <TabsContent value="quotas" className="mt-0 min-h-56 space-y-5 px-4 py-4 sm:px-5">
-                    <div className="space-y-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                            Yearly quota (days)
-                        </p>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                            {(
-                                [
-                                    { label: "Employee", key: "employeeLeaveQuota", color: "bg-emerald-50 text-emerald-600" },
-                                    { label: "Intern", key: "internLeaveQuota", color: "bg-amber-50 text-amber-600" },
-                                    { label: "Contractual", key: "contractualLeaveQuota", color: "bg-violet-50 text-violet-600" },
-                                ] as const
-                            ).map(({ label, key, color }) => (
-                                <div key={key} className="space-y-1.5">
-                                    <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", color)}>{label}</span>
-                                    <Input
-                                        type="number"
-                                        min="0"
-                                        className="text-center font-semibold"
-                                        value={form[key]}
-                                        onChange={(e) => set(key, parseInt(e.target.value) || 0)}
-                                    />
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                    <div className="space-y-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                            Monthly cap (days)
-                        </p>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                            {(
-                                [
-                                    { label: "Employee", key: "employeeMonthlyCap", color: "bg-emerald-50 text-emerald-600" },
-                                    { label: "Intern", key: "internMonthlyCap", color: "bg-amber-50 text-amber-600" },
-                                    { label: "Contractual", key: "contractualMonthlyCap", color: "bg-violet-50 text-violet-600" },
-                                ] as const
-                            ).map(({ label, key, color }) => (
-                                <div key={key} className="space-y-1.5">
-                                    <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", color)}>{label}</span>
-                                    <Input
-                                        type="number"
-                                        min="0"
-                                        className="text-center font-semibold"
-                                        value={form[key]}
-                                        onChange={(e) => set(key, parseInt(e.target.value) || 0)}
-                                    />
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                    <p className="rounded-lg border border-amber-100 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-600">
-                        Changing yearly quotas updates the base leave balance for all existing users of that type.
-                    </p>
-                </TabsContent>
             </Tabs>
 
             {error && (
@@ -1330,31 +1155,8 @@ export default function DepartmentsPage() {
                                 </div>
                             </div>
 
-                            {/* Leave quotas */}
-                            <div className="flex-1 px-4 pb-3">
-                                <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                    Leave caps (d/yr)
-                                </p>
-                                <div className="space-y-1 rounded-lg border border-slate-100 bg-slate-50/60 p-2">
-                                    {(
-                                        [
-                                            { label: "Intern", quota: org.internLeaveQuota, cap: org.internMonthlyCap, color: "text-amber-600" },
-                                            { label: "Employee", quota: org.employeeLeaveQuota, cap: org.employeeMonthlyCap, color: "text-emerald-600" },
-                                            { label: "Contractual", quota: org.contractualLeaveQuota, cap: org.contractualMonthlyCap, color: "text-violet-600" },
-                                        ] as const
-                                    ).map(({ label, quota, cap, color }) => (
-                                        <div key={label} className="flex items-center justify-between px-1">
-                                            <span className="text-xs font-medium text-slate-500">{label}</span>
-                                            <span className={cn("text-xs font-bold", color)}>
-                                                {quota}d / cap {cap}d
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
                             {/* Footer */}
-                            <div className="px-4 pb-4 pt-1">
+                            <div className="flex-1 px-4 pb-4 pt-1">
                                 <p className="mb-2.5 flex items-center gap-1 text-[10px] text-slate-400">
                                     <CalendarDays className="h-3 w-3" />
                                     Created {format(new Date(org.createdAt), "MMM d, yyyy")}

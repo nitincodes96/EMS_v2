@@ -12,17 +12,6 @@ import { Pencil } from "lucide-react"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
 import type { User, Department } from "@/types"
 
-function getUserTypeBadge(userType: string) {
-  switch (userType) {
-    case "INTERN":
-      return <Badge className="border border-orange-100 bg-orange-50 px-1.5 py-0 text-[10px] text-orange-700">Intern</Badge>
-    case "CONTRACTUAL":
-      return <Badge className="border border-violet-100 bg-violet-50 px-1.5 py-0 text-[10px] text-violet-700">Contract</Badge>
-    default:
-      return <Badge className="border border-emerald-100 bg-emerald-50 px-1.5 py-0 text-[10px] text-emerald-700">Employee</Badge>
-  }
-}
-
 function getStatusBadge(status: string) {
   return status === "ACCEPTED" ? (
     <Badge className="border border-emerald-100 bg-emerald-50 px-1.5 py-0 text-[10px] text-emerald-700">Accepted</Badge>
@@ -84,7 +73,6 @@ export function UserTable({
               <TableHead className="pl-4">Member</TableHead>
               {mode === "super-admin" && <TableHead>Department</TableHead>}
               <TableHead>Role</TableHead>
-              <TableHead className="hidden sm:table-cell">Type</TableHead>
               <TableHead className="hidden sm:table-cell">Invite</TableHead>
               <TableHead className="hidden sm:table-cell">Joined</TableHead>
               <TableHead className="text-center">Active</TableHead>
@@ -94,7 +82,7 @@ export function UserTable({
           <TableBody>
             {users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={mode === "super-admin" ? 8 : 7} className="py-8 text-center text-sm text-slate-400">
+                <TableCell colSpan={mode === "super-admin" ? 7 : 6} className="py-8 text-center text-sm text-slate-400">
                   No users found.
                 </TableCell>
               </TableRow>
@@ -103,12 +91,12 @@ export function UserTable({
                 <TableRow key={user.id} className={updatingUserId === user.id ? "pointer-events-none opacity-40" : ""}>
                   <TableCell className="pl-4">
                     <div className="flex items-center gap-3">
-                      <EntityAvatar name={user.name} fallbackText={user.email} imageUrl={user.photoUrl} className="h-9 w-9 border border-slate-200" />
+                      <EntityAvatar name={user.name} fallbackText={user.email || user.empCode} imageUrl={user.photoUrl} className="h-9 w-9 border border-slate-200" />
                       <div className="flex flex-col">
                         <Link href={`${attendanceLinkPrefix}/${user.id}`} className="text-xs font-semibold text-slate-800 hover:underline">
-                          {user.name || "Unnamed"}
+                          {user.name || user.empCode || "Unnamed"}
                         </Link>
-                        <span className="text-[10px] text-slate-400">{user.email}</span>
+                        <span className="text-[10px] text-slate-400">{user.email || user.empCode}</span>
                       </div>
                     </div>
                   </TableCell>
@@ -126,7 +114,6 @@ export function UserTable({
                       </SelectContent>
                     </Select>
                   </TableCell>
-                  <TableCell className="hidden sm:table-cell">{getUserTypeBadge(user.userType)}</TableCell>
                   <TableCell className="hidden sm:table-cell">{getStatusBadge(user.status)}</TableCell>
                   <TableCell className="hidden text-xs text-slate-500 sm:table-cell">
                     {format(new Date(user.createdAt), "MMM d, yyyy")}

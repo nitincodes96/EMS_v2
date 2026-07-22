@@ -17,7 +17,7 @@ type Leave = {
   decisionRemark: string | null
 }
 
-type Summary = { totalQuota: number; usedLeaveDays: number; balance: number; pendingLeaves: number }
+type Summary = { usedLeaveDays: number; pendingLeaves: number }
 
 const LEAVE_TYPES = ["CASUAL", "SICK", "EARNED", "UNPAID", "OTHER"]
 
@@ -58,10 +58,8 @@ export function LeavePanel() {
       </div>
 
       {summary && (
-        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Stat label="Quota" value={summary.totalQuota} />
-          <Stat label="Used" value={summary.usedLeaveDays} />
-          <Stat label="Balance" value={summary.balance} accent="text-emerald-600" />
+        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-2">
+          <Stat label="Used this year" value={summary.usedLeaveDays} accent="text-emerald-600" />
           <Stat label="Pending" value={summary.pendingLeaves} accent="text-amber-600" />
         </div>
       )}

@@ -3,7 +3,7 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route"
 
 export type SessionUser = {
   id: string
-  email: string
+  email: string | null
   role: "ADMIN" | "FACULTY" | "PROJECT_ASSISTANT"
   departmentId: string | null
 }
@@ -13,7 +13,7 @@ export async function getSessionUser(): Promise<SessionUser | undefined> {
   if (!session?.user) return undefined
   return {
     id: session.user.id,
-    email: session.user.email ?? "",
+    email: session.user.email ?? null,
     role: session.user.role as SessionUser["role"],
     departmentId: session.user.departmentId ?? null,
   }

@@ -57,25 +57,18 @@ import { UserFilter } from '@/components/shared/filters/user-filter'
 import { format } from 'date-fns'
 import { PREDEFINED_RELIGIOUS_HOLIDAYS } from '@/lib/holidays'
 import { EntityAvatar } from '@/components/shared/entity-avatar'
-import { normalizeUploadedAssetUrl } from '@/lib/upload-urls'
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
 interface User {
   id: string
-  email: string
+  email: string | null
+  empCode?: string | null
   name: string | null
   photoUrl?: string | null
   phoneNumber?: string | null
-  aadharNumber?: string | null
-  panNumber?: string | null
-  dateOfBirth?: string | null
-  resumeUrl?: string | null
   role: 'PROJECT_ASSISTANT' | 'FACULTY' | 'ADMIN'
-  userType: 'EMPLOYEE' | 'INTERN' | 'CONTRACTUAL'
   isActive: boolean
-  baseLeaveQuota: number
-  extraLeaveQuota: number
   status: string
   joiningDate?: string | null
   createdAt: string
@@ -112,9 +105,6 @@ interface DepartmentDetails {
   name: string
   description: string | null
   logoUrl?: string | null
-  employeeLeaveQuota: number
-  internLeaveQuota: number
-  contractualLeaveQuota: number
   createdAt: string
   users: User[]
   holidays: Holiday[]
@@ -151,21 +141,12 @@ export default function DepartmentDetailsPage() {
     email: '',
     name: '',
     phoneNumber: '',
-    aadharNumber: '',
-    panNumber: '',
-    dateOfBirth: '',
-    resumeUrl: '',
+    empCode: '',
     role: 'PROJECT_ASSISTANT',
-    userType: 'EMPLOYEE',
-    basicSalary: '',
-    hra: '',
-    tdsPercent: '',
-    pfPercent: '',
-    lopEnabled: true,
   })
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
-  const [resumeFile, setResumeFile] = useState<File | null>(null)
+  const [inviteLink, setInviteLink] = useState<string | null>(null)
 
   // ── Staff management state ──
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
@@ -177,16 +158,11 @@ export default function DepartmentDetailsPage() {
   const [editingMember, setEditingMember] = useState<User | null>(null)
   const [editFormData, setEditFormData] = useState({
     name: '',
-    extraLeaveQuota: 0,
+    empCode: '',
     phoneNumber: '',
-    aadharNumber: '',
-    panNumber: '',
-    dateOfBirth: '',
-    resumeUrl: '',
   })
   const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null)
   const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null)
-  const [editResumeFile, setEditResumeFile] = useState<File | null>(null)
 
   // ── Leave action state ──
   const [actioningLeaveId, setActioningLeaveId] = useState<string | null>(null)
@@ -194,7 +170,6 @@ export default function DepartmentDetailsPage() {
   // ── Search state ──
   const [staffSearch, setStaffSearch] = useState('')
   const [filterRole, setFilterRole] = useState('all')
-  const [filterUserType, setFilterUserType] = useState('all')
   const [filterMonth, setFilterMonth] = useState('all')
   const [filterYear, setFilterYear] = useState('all')
 
@@ -252,24 +227,6 @@ export default function DepartmentDetailsPage() {
     reader.readAsDataURL(file)
   }
 
-  const handleResumeChange = (event: React.ChangeEvent<HTMLInputElement>, mode: 'create' | 'edit') => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    const isPdfType = file.type === 'application/pdf'
-    const isPdfName = file.name.toLowerCase().endsWith('.pdf')
-    if (!isPdfType && !isPdfName) {
-      setError('Resume must be a PDF file')
-      return
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Resume must be under 5MB')
-      return
-    }
-
-    if (mode === 'create') setResumeFile(file)
-    else setEditResumeFile(file)
-  }
-
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
   const handleAddUser = async (e: React.FormEvent) => {
@@ -277,24 +234,19 @@ export default function DepartmentDetailsPage() {
     if (!org) return
     setSubmitting(true)
     setError('')
+    setInviteLink(null)
     try {
       const formData = new FormData()
-      formData.append('email', newUser.email)
-      formData.append('name', newUser.name)
-      formData.append('phoneNumber', newUser.phoneNumber)
-      formData.append('aadharNumber', newUser.aadharNumber)
-      formData.append('panNumber', newUser.panNumber)
-      formData.append('dateOfBirth', newUser.dateOfBirth)
       formData.append('role', newUser.role)
-      formData.append('userType', newUser.userType)
       formData.append('departmentId', org.id)
-      if (newUser.basicSalary !== '') formData.append('basicSalary', newUser.basicSalary)
-      if (newUser.hra !== '') formData.append('hra', newUser.hra)
-      formData.append('tdsPercent', newUser.tdsPercent)
-      formData.append('pfPercent', newUser.pfPercent)
-      formData.append('lopEnabled', String(newUser.lopEnabled))
+      if (newUser.role === 'FACULTY') {
+        formData.append('empCode', newUser.empCode)
+      } else {
+        formData.append('email', newUser.email)
+        formData.append('name', newUser.name)
+        formData.append('phoneNumber', newUser.phoneNumber)
+      }
       if (photoFile) formData.append('photo', photoFile)
-      if (resumeFile) formData.append('resume', resumeFile)
 
       const response = await fetch('/api/users', {
         method: 'POST',
@@ -302,26 +254,20 @@ export default function DepartmentDetailsPage() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Failed to create user')
-      setShowAddDialog(false)
       setNewUser({
         email: '',
         name: '',
         phoneNumber: '',
-        aadharNumber: '',
-        panNumber: '',
-        dateOfBirth: '',
-        resumeUrl: '',
+        empCode: '',
         role: 'PROJECT_ASSISTANT',
-        userType: 'EMPLOYEE',
-        basicSalary: '',
-        hra: '',
-        tdsPercent: '',
-        pfPercent: '',
-        lopEnabled: true,
       })
       setPhotoFile(null)
       setPhotoPreview(null)
-      setResumeFile(null)
+      if (data.inviteLink) {
+        setInviteLink(data.inviteLink)
+      } else {
+        setShowAddDialog(false)
+      }
       fetchDetails()
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to create user')
@@ -376,16 +322,11 @@ export default function DepartmentDetailsPage() {
     setEditingMember(member)
     setEditFormData({
       name: member.name || '',
-      extraLeaveQuota: member.extraLeaveQuota,
+      empCode: member.empCode || '',
       phoneNumber: member.phoneNumber || '',
-      aadharNumber: member.aadharNumber || '',
-      panNumber: member.panNumber || '',
-      dateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth).toISOString().split('T')[0] : '',
-      resumeUrl: member.resumeUrl || '',
     })
     setEditPhotoFile(null)
     setEditPhotoPreview(member.photoUrl || null)
-    setEditResumeFile(null)
     setShowEditMemberDialog(true)
   }
 
@@ -396,13 +337,12 @@ export default function DepartmentDetailsPage() {
     try {
       const formData = new FormData()
       formData.append('name', editFormData.name)
-      formData.append('extraLeaveQuota', String(editFormData.extraLeaveQuota))
-      formData.append('phoneNumber', editFormData.phoneNumber)
-      formData.append('aadharNumber', editFormData.aadharNumber)
-      formData.append('panNumber', editFormData.panNumber)
-      formData.append('dateOfBirth', editFormData.dateOfBirth)
+      if (editingMember.role === 'FACULTY') {
+        formData.append('empCode', editFormData.empCode)
+      } else {
+        formData.append('phoneNumber', editFormData.phoneNumber)
+      }
       if (editPhotoFile) formData.append('photo', editPhotoFile)
-      if (editResumeFile) formData.append('resume', editResumeFile)
 
       const response = await fetch(`/api/users/${editingMember.id}`, {
         method: 'PATCH',
@@ -415,6 +355,25 @@ export default function DepartmentDetailsPage() {
       setError(error instanceof Error ? error.message : 'Failed to update member')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleRegenerateInvite = async (userId: string) => {
+    setUpdatingUser(userId)
+    try {
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ regenerateInvite: true }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to regenerate setup link')
+      setInviteLink(data.inviteLink)
+      fetchDetails()
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to regenerate setup link')
+    } finally {
+      setUpdatingUser(null)
     }
   }
 
@@ -489,17 +448,6 @@ export default function DepartmentDetailsPage() {
     }
   }
 
-  const getUserTypeBadge = (userType: string) => {
-    switch (userType) {
-      case 'INTERN':
-        return <Badge className="bg-orange-50 text-orange-700 hover:bg-orange-50 border border-orange-100 text-[10px] px-1.5 py-0">Intern</Badge>
-      case 'CONTRACTUAL':
-        return <Badge className="bg-violet-50 text-violet-700 hover:bg-violet-50 border border-violet-100 text-[10px] px-1.5 py-0">Contract</Badge>
-      default:
-        return <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border border-emerald-100 text-[10px] px-1.5 py-0">Employee</Badge>
-    }
-  }
-
   if (loading) return <DepartmentDetailSkeleton />
 
   if (error || !org) {
@@ -519,22 +467,21 @@ export default function DepartmentDetailsPage() {
     const q = staffSearch.toLowerCase()
     const matchesSearch = !staffSearch ||
       m.name?.toLowerCase().includes(q) ||
-      m.email.toLowerCase().includes(q)
+      m.email?.toLowerCase().includes(q) ||
+      m.empCode?.toLowerCase().includes(q)
     const matchesRole = filterRole === 'all' || m.role === filterRole
-    const matchesUserType = filterUserType === 'all' || m.userType === filterUserType
     const joined = new Date(m.createdAt)
     const matchesMonth = filterMonth === 'all' || (joined.getMonth() + 1) === parseInt(filterMonth)
     const matchesYear = filterYear === 'all' || joined.getFullYear() === parseInt(filterYear)
-    return matchesSearch && matchesRole && matchesUserType && matchesMonth && matchesYear
+    return matchesSearch && matchesRole && matchesMonth && matchesYear
   })
 
   const exportData = filteredUsers.map((m) => ({
     Name: m.name || '',
-    Email: m.email,
+    Email: m.email || '',
+    'Emp Code': m.empCode || '',
     Role: m.role,
-    'User Type': m.userType,
     Active: m.isActive ? 'Yes' : 'No',
-    'Leave Quota': m.baseLeaveQuota + m.extraLeaveQuota,
     'Joined': new Date(m.createdAt).toLocaleDateString('en-CA'),
   }))
 
@@ -602,9 +549,9 @@ export default function DepartmentDetailsPage() {
             onOpenChange={(open) => {
               setShowAddDialog(open)
               if (!open) {
-                setResumeFile(null)
                 setPhotoFile(null)
                 setPhotoPreview(null)
+                setInviteLink(null)
               }
             }}
           >
@@ -619,58 +566,40 @@ export default function DepartmentDetailsPage() {
               <Plus className="h-3.5 w-3.5" />
               Invite User
             </DialogTrigger>
-            <DialogContent className="w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Invite User to {org.name}</DialogTitle>
                 <DialogDescription>
-                  An invite email will be sent to the user. They will set their own password after accepting.
+                  {newUser.role === 'FACULTY'
+                    ? 'Faculty accounts have no email — share the setup link with them after creating the account.'
+                    : 'An invite email will be sent to the user. They will set their own password after accepting.'}
                 </DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleAddUser} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input id="name" placeholder="Full Name" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} disabled={submitting} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="photo">Photo</Label>
-                  <div className="flex items-center gap-3">
-                    <EntityAvatar name={newUser.name} fallbackText={newUser.email || 'User'} imageUrl={photoPreview} className="h-12 w-12 border border-slate-200" />
-                    <Input id="photo" type="file" accept="image/*" onChange={(e) => handlePhotoChange(e, 'create')} />
+              {inviteLink ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+                    <p className="text-xs font-semibold text-emerald-700">Account created. Share this setup link with the faculty member:</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Input readOnly value={inviteLink} className="text-xs" />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigator.clipboard.writeText(inviteLink)}
+                      >
+                        Copy
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button type="button" className="cursor-pointer" onClick={() => { setShowAddDialog(false); setInviteLink(null) }}>Done</Button>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" placeholder="email@example.com" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required disabled={submitting} />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
+              ) : (
+                <form onSubmit={handleAddUser} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="phoneNumber">Phone Number (optional)</Label>
-                    <Input id="phoneNumber" placeholder="10-digit mobile" value={newUser.phoneNumber} onChange={(e) => setNewUser({ ...newUser, phoneNumber: e.target.value })} disabled={submitting} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="dateOfBirth">Date of Birth (optional)</Label>
-                    <Input id="dateOfBirth" type="date" value={newUser.dateOfBirth} onChange={(e) => setNewUser({ ...newUser, dateOfBirth: e.target.value })} disabled={submitting} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="aadharNumber">Aadhar Number (optional)</Label>
-                    <Input id="aadharNumber" placeholder="12-digit Aadhar" value={newUser.aadharNumber} onChange={(e) => setNewUser({ ...newUser, aadharNumber: e.target.value })} disabled={submitting} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="panNumber">PAN Number (optional)</Label>
-                    <Input id="panNumber" placeholder="ABCDE1234F" value={newUser.panNumber} onChange={(e) => setNewUser({ ...newUser, panNumber: e.target.value.toUpperCase() })} disabled={submitting} />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="resume">Resume (PDF, optional)</Label>
-                  <Input id="resume" type="file" accept="application/pdf,.pdf" onChange={(e) => handleResumeChange(e, 'create')} disabled={submitting} />
-                  {resumeFile && <p className="text-[11px] text-slate-500">Selected: {resumeFile.name}</p>}
-                </div>
-                <div className="flex gap-4">
-                  <div className="space-y-2 flex-1">
                     <Label htmlFor="role">Role</Label>
-                    <Select value={newUser.role} onValueChange={(value) => value && setNewUser({ ...newUser, role: value, userType: value === 'FACULTY' ? 'EMPLOYEE' : newUser.userType })}>
+                    <Select value={newUser.role} onValueChange={(value) => value && setNewUser({ ...newUser, role: value })}>
                       <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
@@ -678,91 +607,46 @@ export default function DepartmentDetailsPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2 flex-1">
-                    <Label htmlFor="userType">User Type</Label>
-                    <Select value={newUser.userType} onValueChange={(value: any) => setNewUser({ ...newUser, userType: value })} disabled={newUser.role === 'FACULTY'}>
-                      <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="EMPLOYEE">Employee</SelectItem>
-                        <SelectItem value="INTERN">Intern</SelectItem>
-                        <SelectItem value="CONTRACTUAL">Contractual</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {newUser.role === 'FACULTY' && <p className="text-[10px] text-slate-400">Faculty are always Employees</p>}
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
+
+                  {newUser.role === 'FACULTY' ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="empCode">Employee Code</Label>
+                      <Input id="empCode" placeholder="e.g. FAC1029" value={newUser.empCode} onChange={(e) => setNewUser({ ...newUser, empCode: e.target.value })} required disabled={submitting} />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="name">Name</Label>
+                        <Input id="name" placeholder="Full Name" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} disabled={submitting} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="email">Email</Label>
+                        <Input id="email" type="email" placeholder="email@example.com" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required disabled={submitting} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="phoneNumber">Phone Number (optional)</Label>
+                        <Input id="phoneNumber" placeholder="10-digit mobile" value={newUser.phoneNumber} onChange={(e) => setNewUser({ ...newUser, phoneNumber: e.target.value })} disabled={submitting} />
+                      </div>
+                    </>
+                  )}
+
                   <div className="space-y-2">
-                    <Label className="text-xs text-slate-500 uppercase tracking-wide font-semibold">Basic Salary</Label>
-                    <Input
-                      type="number"
-                      placeholder='Enter Basic Salary'
-                      min="0"
-                      value={newUser.basicSalary}
-                      onChange={(e) => setNewUser({ ...newUser, basicSalary: e.target.value })}
-                      className="text-sm"
-                    />
+                    <Label htmlFor="photo">Photo</Label>
+                    <div className="flex items-center gap-3">
+                      <EntityAvatar name={newUser.name} fallbackText={newUser.email || newUser.empCode || 'User'} imageUrl={photoPreview} className="h-12 w-12 border border-slate-200" />
+                      <Input id="photo" type="file" accept="image/*" onChange={(e) => handlePhotoChange(e, 'create')} />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-slate-500 uppercase tracking-wide font-semibold">HRA</Label>
-                    <Input
-                      type="number"
-                      placeholder='Enter HRA'
-                      min="0"
-                      value={newUser.hra}
-                      onChange={(e) => setNewUser({ ...newUser, hra: e.target.value })}
-                      className="text-sm"
-                    />
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button type="button" variant="outline" className="cursor-pointer" onClick={() => setShowAddDialog(false)} disabled={submitting}>Cancel</Button>
+                    <Button type="submit" className="text-white cursor-pointer" style={{ backgroundColor: 'var(--theme)' }} disabled={submitting}>
+                      {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2 text-white" /> : <Plus className="h-4 w-4 mr-2" />}
+                      Create Account
+                    </Button>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label className="text-xs text-slate-500 uppercase tracking-wide font-semibold">TDS % (optional)</Label>
-                    <Input
-                      type="number"
-                      placeholder='Enter TDS %'
-                      min="0"
-                      max="100"
-                      value={newUser.tdsPercent}
-                      onChange={(e) => setNewUser({ ...newUser, tdsPercent: e.target.value })}
-                      className="text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-slate-500 uppercase tracking-wide font-semibold">PF % (optional)</Label>
-                    <Input
-                      type="number"
-                      placeholder='Enter PF %'
-                      min="0"
-                      max="100"
-                      value={newUser.pfPercent}
-                      onChange={(e) => setNewUser({ ...newUser, pfPercent: e.target.value })}
-                      className="text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Apply LOP</p>
-                    <p className="text-[11px] text-slate-400">[(BASIC + HRA - (TDS + PF)) / daysInMonth] * unpaid leaves; half-day rule applies</p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setNewUser({ ...newUser, lopEnabled: !newUser.lopEnabled })}
-                  >
-                    {newUser.lopEnabled ? 'Enabled' : 'Disabled'}
-                  </Button>
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="outline" className="cursor-pointer" onClick={() => setShowAddDialog(false)} disabled={submitting}>Cancel</Button>
-                  <Button type="submit" className="text-white cursor-pointer" style={{ backgroundColor: 'var(--theme)' }} disabled={submitting}>
-                    {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2 text-white" /> : <Plus className="h-4 w-4 mr-2" />}
-                    Create Account
-                  </Button>
-                </div>
-              </form>
+                </form>
+              )}
             </DialogContent>
           </Dialog>
         </div>
@@ -794,12 +678,10 @@ export default function DepartmentDetailsPage() {
               <UserFilter
                 filterOrg="all"
                 filterRole={filterRole}
-                filterUserType={filterUserType}
                 filterMonth={filterMonth}
                 filterYear={filterYear}
                 onOrgChange={() => { }}
                 onRoleChange={setFilterRole}
-                onUserTypeChange={setFilterUserType}
                 onMonthChange={setFilterMonth}
                 onYearChange={setFilterYear}
                 exportData={exportData}
@@ -813,9 +695,7 @@ export default function DepartmentDetailsPage() {
                 <TableRow className="border-b border-slate-100">
                   <TableHead className="pl-4 py-2 text-[11px] font-semibold text-slate-500 h-8">Member</TableHead>
                   <TableHead className="py-2 text-[11px] font-semibold text-slate-500 h-8">Role</TableHead>
-                  <TableHead className="py-2 text-[11px] font-semibold text-slate-500 h-8 hidden sm:table-cell">Type</TableHead>
                   <TableHead className="py-2 text-[11px] font-semibold text-slate-500 h-8 hidden sm:table-cell">Joining Date</TableHead>
-                  <TableHead className="text-center py-2 text-[11px] font-semibold text-slate-500 h-8 hidden sm:table-cell">Quota</TableHead>
                   <TableHead className="text-center py-2 text-[11px] font-semibold text-slate-500 h-8">Active</TableHead>
                   <TableHead className="pr-3 text-right py-2 text-[11px] font-semibold text-slate-500 h-8">Edit</TableHead>
                 </TableRow>
@@ -823,7 +703,7 @@ export default function DepartmentDetailsPage() {
               <TableBody>
                 {filteredUsers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-slate-400 text-sm">
+                    <TableCell colSpan={5} className="text-center py-8 text-slate-400 text-sm">
                       {staffSearch ? 'No matching members.' : 'No staff added yet.'}
                     </TableCell>
                   </TableRow>
@@ -835,12 +715,12 @@ export default function DepartmentDetailsPage() {
                     >
                       <TableCell className="pl-4 py-2">
                         <div className="flex items-center gap-3">
-                          <EntityAvatar name={member.name} fallbackText={member.email} imageUrl={member.photoUrl} className="h-9 w-9 border border-slate-200" />
+                          <EntityAvatar name={member.name} fallbackText={member.email || member.empCode} imageUrl={member.photoUrl} className="h-9 w-9 border border-slate-200" />
                           <div className="flex flex-col">
                             <Link href={`/admin/attendance/${member.id}`} className="text-xs font-semibold text-slate-800 hover:underline leading-tight">
-                              {member.name || 'Unnamed'}
+                              {member.name || member.empCode || 'Unnamed'}
                             </Link>
-                            <span className="text-[10px] text-slate-400 leading-tight">{member.email}</span>
+                            <span className="text-[10px] text-slate-400 leading-tight">{member.email || member.empCode}</span>
                           </div>
                         </div>
                       </TableCell>
@@ -855,17 +735,12 @@ export default function DepartmentDetailsPage() {
                           </SelectContent>
                         </Select>
                       </TableCell>
-                      <TableCell className="py-2 hidden sm:table-cell">{getUserTypeBadge(member.userType)}</TableCell>
                       <TableCell className="py-2 hidden sm:table-cell">
                         <span className="text-[11px] text-slate-600 font-medium">
                           {member.status === 'ACCEPTED' && member.joiningDate
                             ? format(new Date(member.joiningDate), 'dd MMM yyyy')
                             : '--'}
                         </span>
-                      </TableCell>
-                      <TableCell className="text-center py-2 hidden sm:table-cell">
-                        <span className="text-xs font-bold text-slate-700">{member.baseLeaveQuota + member.extraLeaveQuota}</span>
-                        <span className="text-[9px] text-slate-400 ml-0.5">d</span>
                       </TableCell>
                       <TableCell className="text-center py-2">
                         <Switch
@@ -875,9 +750,22 @@ export default function DepartmentDetailsPage() {
                         />
                       </TableCell>
                       <TableCell className="text-right pr-3 py-2">
-                        <Button variant="ghost" size="icon" onClick={() => openEditMemberDialog(member)} className="h-6 w-6 text-slate-400 hover:text-slate-800 cursor-pointer">
-                          <Pencil className="h-3 w-3" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {member.role === 'FACULTY' && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Regenerate setup link"
+                              onClick={() => handleRegenerateInvite(member.id)}
+                              className="h-6 w-6 text-slate-400 hover:text-slate-800 cursor-pointer"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="icon" onClick={() => openEditMemberDialog(member)} className="h-6 w-6 text-slate-400 hover:text-slate-800 cursor-pointer">
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -1064,56 +952,26 @@ export default function DepartmentDetailsPage() {
           <form onSubmit={handleUpdateMember} className="space-y-4 pt-4">
             <div className="space-y-2">
               <Label htmlFor="memberName">Member Name</Label>
-              <Input id="memberName" value={editFormData.name} onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })} required />
+              <Input id="memberName" value={editFormData.name} onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="memberPhoto">Photo</Label>
               <div className="flex items-center gap-3">
-                <EntityAvatar name={editFormData.name} fallbackText={editingMember?.email} imageUrl={editPhotoPreview} className="h-12 w-12 border border-slate-200" />
+                <EntityAvatar name={editFormData.name} fallbackText={editingMember?.email || editingMember?.empCode} imageUrl={editPhotoPreview} className="h-12 w-12 border border-slate-200" />
                 <Input id="memberPhoto" type="file" accept="image/*" onChange={(e) => handlePhotoChange(e, 'edit')} />
               </div>
             </div>
-            {editingMember && (
+            {editingMember?.role === 'FACULTY' ? (
               <div className="space-y-2">
-                <Label>Base Leave Quota</Label>
-                <Input type="number" value={editingMember.baseLeaveQuota} disabled className="bg-slate-50" />
-                <p className="text-xs text-slate-400">Set at department level based on user type ({editingMember.userType})</p>
+                <Label htmlFor="editEmpCode">Employee Code</Label>
+                <Input id="editEmpCode" value={editFormData.empCode} onChange={(e) => setEditFormData({ ...editFormData, empCode: e.target.value })} required />
               </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="extraQuota">Extra Leave Quota</Label>
-              <Input id="extraQuota" type="number" value={editFormData.extraLeaveQuota} onChange={(e) => setEditFormData({ ...editFormData, extraLeaveQuota: parseInt(e.target.value) || 0 })} min="0" required />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+            ) : (
               <div className="space-y-2">
                 <Label htmlFor="editPhoneNumber">Phone Number (optional)</Label>
                 <Input id="editPhoneNumber" value={editFormData.phoneNumber} onChange={(e) => setEditFormData({ ...editFormData, phoneNumber: e.target.value })} />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="editDateOfBirth">Date of Birth (optional)</Label>
-                <Input id="editDateOfBirth" type="date" value={editFormData.dateOfBirth} onChange={(e) => setEditFormData({ ...editFormData, dateOfBirth: e.target.value })} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="editAadharNumber">Aadhar Number (optional)</Label>
-                <Input id="editAadharNumber" value={editFormData.aadharNumber} onChange={(e) => setEditFormData({ ...editFormData, aadharNumber: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="editPanNumber">PAN Number (optional)</Label>
-                <Input id="editPanNumber" value={editFormData.panNumber} onChange={(e) => setEditFormData({ ...editFormData, panNumber: e.target.value.toUpperCase() })} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="editResume">Resume (PDF, optional)</Label>
-              <Input id="editResume" type="file" accept="application/pdf,.pdf" onChange={(e) => handleResumeChange(e, 'edit')} />
-              {editResumeFile && <p className="text-[11px] text-slate-500">Selected: {editResumeFile.name}</p>}
-              {editFormData.resumeUrl && (
-                <a href={normalizeUploadedAssetUrl(editFormData.resumeUrl) || editFormData.resumeUrl} target="_blank" rel="noreferrer" className="text-xs hover:underline" style={{ backgroundColor: 'var(--theme)' }}>
-                  View current resume
-                </a>
-              )}
-            </div>
+            )}
             <DialogFooter className="gap-2 sm:justify-end">
               <Button variant="outline" type="button" className="cursor-pointer" onClick={() => setShowEditMemberDialog(false)}>Cancel</Button>
               <Button type="submit" className="text-white cursor-pointer bg-indigo-500 hover:bg-indigo-600" disabled={submitting}>
@@ -1121,6 +979,25 @@ export default function DepartmentDetailsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Regenerated Setup Link Dialog ── */}
+      <Dialog open={!!inviteLink && !showAddDialog} onOpenChange={(open) => { if (!open) setInviteLink(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Setup link ready</DialogTitle>
+            <DialogDescription>Share this link with the faculty member so they can set a password.</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2">
+            <Input readOnly value={inviteLink || ''} className="text-xs" />
+            <Button type="button" size="sm" variant="outline" onClick={() => inviteLink && navigator.clipboard.writeText(inviteLink)}>
+              Copy
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button type="button" className="cursor-pointer" onClick={() => setInviteLink(null)}>Done</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

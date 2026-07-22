@@ -60,32 +60,23 @@ export default function SuperAdminUsersPage() {
   const [departments, setDepartments] = useState<Department[]>([])
   const [filterOrg, setFilterOrg] = useState('all')
   const [filterRole, setFilterRole] = useState('all')
-  const [filterUserType, setFilterUserType] = useState('all')
   const [filterMonth, setFilterMonth] = useState('all')
   const [filterYear, setFilterYear] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [error, setError] = useState('')
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [inviteLink, setInviteLink] = useState<string | null>(null)
 
   const [newUser, setNewUser] = useState({
     email: '',
     name: '',
     phoneNumber: '',
-    aadharNumber: '',
-    panNumber: '',
-    dateOfBirth: '',
+    empCode: '',
     role: 'PROJECT_ASSISTANT',
-    userType: 'EMPLOYEE',
     departmentId: '',
-    basicSalary: '',
-    hra: '',
-    tdsPercent: '',
-    pfPercent: '',
-    lopEnabled: true,
   })
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
-  const [resumeFile, setResumeFile] = useState<File | null>(null)
 
   const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -105,42 +96,18 @@ export default function SuperAdminUsersPage() {
     reader.readAsDataURL(file)
   }
 
-  const handleResumeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    const isPdfType = file.type === 'application/pdf'
-    const isPdfName = file.name.toLowerCase().endsWith('.pdf')
-    if (!isPdfType && !isPdfName) {
-      setError('Resume must be a PDF file')
-      return
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Resume must be under 5MB')
-      return
-    }
-    setResumeFile(file)
-  }
-
   const resetUserForm = () => {
     setNewUser({
       email: '',
       name: '',
       phoneNumber: '',
-      aadharNumber: '',
-      panNumber: '',
-      dateOfBirth: '',
+      empCode: '',
       role: 'PROJECT_ASSISTANT',
-      userType: 'EMPLOYEE',
       departmentId: '',
-      basicSalary: '',
-      hra: '',
-      tdsPercent: '',
-      pfPercent: '',
-      lopEnabled: true,
     })
     setPhotoFile(null)
     setPhotoPreview(null)
-    setResumeFile(null)
+    setInviteLink(null)
   }
 
   const openCreateDialog = () => {
@@ -153,24 +120,16 @@ export default function SuperAdminUsersPage() {
   const openEditDialog = (user: User) => {
     setEditingUser(user)
     setNewUser({
-      email: user.email,
+      email: user.email || '',
       name: user.name || '',
       phoneNumber: user.phoneNumber || '',
-      aadharNumber: user.aadharNumber || '',
-      panNumber: user.panNumber || '',
-      dateOfBirth: user.dateOfBirth ? new Date(user.dateOfBirth).toISOString().split('T')[0] : '',
+      empCode: user.empCode || '',
       role: user.role === 'ADMIN' ? 'PROJECT_ASSISTANT' : user.role,
-      userType: user.role === 'FACULTY' ? 'EMPLOYEE' : user.userType,
       departmentId: user.departmentId || '',
-      basicSalary: user.basicSalary?.toString() || '',
-      hra: user.hra?.toString() || '',
-      tdsPercent: user.tdsPercent?.toString() || '',
-      pfPercent: user.pfPercent?.toString() || '',
-      lopEnabled: user.lopEnabled ?? true,
     })
     setPhotoFile(null)
     setPhotoPreview(user.photoUrl || null)
-    setResumeFile(null)
+    setInviteLink(null)
     setError('')
     setShowAddDialog(true)
   }
@@ -186,7 +145,7 @@ export default function SuperAdminUsersPage() {
     fetchUsers()
     fetchDepartments()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterOrg, filterRole, filterUserType])
+  }, [filterOrg, filterRole])
 
   useEffect(() => {
     const q = searchQuery.toLowerCase()
@@ -195,7 +154,8 @@ export default function SuperAdminUsersPage() {
       result = result.filter(
         (u) =>
           u.name?.toLowerCase().includes(q) ||
-          u.email.toLowerCase().includes(q)
+          u.email?.toLowerCase().includes(q) ||
+          u.empCode?.toLowerCase().includes(q)
       )
     }
     if (filterMonth !== 'all' || filterYear !== 'all') {
@@ -212,9 +172,9 @@ export default function SuperAdminUsersPage() {
   const exportData = useMemo(() =>
     filteredUsers.map((u) => ({
       Name: u.name || '',
-      Email: u.email,
+      Email: u.email || '',
+      'Emp Code': u.empCode || '',
       Role: u.role,
-      'User Type': u.userType,
       Department: u.department?.name || '',
       Status: u.isActive ? 'Active' : 'Inactive',
       Invite: u.status,
@@ -250,7 +210,7 @@ export default function SuperAdminUsersPage() {
   const fetchUsers = async () => {
     try {
       const response = await fetch(
-        `/api/users?departmentId=${filterOrg}&role=${filterRole === 'all' ? '' : filterRole}&userType=${filterUserType === 'all' ? '' : filterUserType}`
+        `/api/users?departmentId=${filterOrg}&role=${filterRole === 'all' ? '' : filterRole}`
       )
       if (response.ok) {
         const data = await response.json()
@@ -271,21 +231,15 @@ export default function SuperAdminUsersPage() {
 
     try {
       const formData = new FormData()
-      formData.append('email', newUser.email)
-      formData.append('name', newUser.name)
-      formData.append('phoneNumber', newUser.phoneNumber)
-      formData.append('aadharNumber', newUser.aadharNumber)
-      formData.append('panNumber', newUser.panNumber)
-      formData.append('dateOfBirth', newUser.dateOfBirth)
-      if (resumeFile) formData.append('resume', resumeFile)
       formData.append('role', newUser.role)
-      formData.append('userType', newUser.userType)
       formData.append('departmentId', newUser.departmentId)
-      if (newUser.basicSalary !== '') formData.append('basicSalary', newUser.basicSalary)
-      if (newUser.hra !== '') formData.append('hra', newUser.hra)
-      formData.append('tdsPercent', newUser.tdsPercent)
-      formData.append('pfPercent', newUser.pfPercent)
-      formData.append('lopEnabled', String(newUser.lopEnabled))
+      if (newUser.role === 'FACULTY') {
+        formData.append('empCode', newUser.empCode)
+      } else {
+        formData.append('email', newUser.email)
+        formData.append('name', newUser.name)
+        formData.append('phoneNumber', newUser.phoneNumber)
+      }
       if (photoFile) formData.append('photo', photoFile)
 
       const response = await fetch(editingUser ? `/api/users/${editingUser.id}` : '/api/users', {
@@ -299,8 +253,12 @@ export default function SuperAdminUsersPage() {
         throw new Error(data.error || 'Failed to create user')
       }
 
-      closeUserDialog()
-      toast.success(editingUser ? 'User updated successfully.' : 'Invite email sent to the user.')
+      if (data.inviteLink) {
+        setInviteLink(data.inviteLink)
+      } else {
+        closeUserDialog()
+        toast.success(editingUser ? 'User updated successfully.' : 'Invite email sent to the user.')
+      }
       fetchUsers()
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to create user')
@@ -340,155 +298,23 @@ export default function SuperAdminUsersPage() {
                   : 'An invite email will be sent to the user. They will set their own password after accepting.'}
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmitUser} className="space-y-4 pt-1">
-              <div className="space-y-1.5">
-                <Label htmlFor="name" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Name
-                </Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="Enter name"
-                  value={newUser.name}
-                  onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                  disabled={submitting}
-                  className="text-sm"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="photo" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Photo
-                </Label>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <EntityAvatar
-                    name={newUser.name}
-                    fallbackText={newUser.email || 'User'}
-                    imageUrl={photoPreview}
-                    className="h-12 w-12 border border-slate-200"
-                  />
-                  <div className="flex flex-col gap-1.5 sm:flex-1">
-                    <Input id="photo" type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
-                    <label
-                      htmlFor="photo"
-                      className="inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-full border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 sm:w-fit"
-                    >
-                      Choose File
-                    </label>
-                    <p className="text-[11px] text-slate-500">
-                      {photoFile
-                        ? photoFile.name
-                        : editingUser?.photoUrl
-                          ? 'Current photo attached'
-                          : 'PNG, JPG, or WEBP up to 2MB'}
-                    </p>
+            {inviteLink ? (
+              <div className="space-y-4 pt-1">
+                <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+                  <p className="text-xs font-semibold text-emerald-700">Account created. Share this setup link with the faculty member:</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Input readOnly value={inviteLink} className="text-xs" />
+                    <Button type="button" size="sm" variant="outline" onClick={() => navigator.clipboard.writeText(inviteLink)}>
+                      Copy
+                    </Button>
                   </div>
                 </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="email" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Email
-                </Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter email"
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  required
-                  disabled={submitting}
-                  className="text-sm"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="phoneNumber" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Phone Number (optional)
-                  </Label>
-                  <Input
-                    id="phoneNumber"
-                    placeholder="10-digit mobile"
-                    value={newUser.phoneNumber}
-                    onChange={(e) => setNewUser({ ...newUser, phoneNumber: e.target.value })}
-                    disabled={submitting}
-                    className="text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="dateOfBirth" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Date of Birth (optional)
-                  </Label>
-                  <Input
-                    id="dateOfBirth"
-                    type="date"
-                    value={newUser.dateOfBirth}
-                    onChange={(e) => setNewUser({ ...newUser, dateOfBirth: e.target.value })}
-                    disabled={submitting}
-                    className="text-sm"
-                  />
+                <div className="flex justify-end">
+                  <Button type="button" className="cursor-pointer bg-indigo-600 text-white hover:bg-indigo-700" onClick={closeUserDialog}>Done</Button>
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="aadharNumber" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Aadhar Number (optional)
-                  </Label>
-                  <Input
-                    id="aadharNumber"
-                    placeholder="12-digit Aadhar"
-                    value={newUser.aadharNumber}
-                    onChange={(e) => setNewUser({ ...newUser, aadharNumber: e.target.value })}
-                    disabled={submitting}
-                    className="text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="panNumber" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    PAN Number (optional)
-                  </Label>
-                  <Input
-                    id="panNumber"
-                    placeholder="ABCDE1234F"
-                    value={newUser.panNumber}
-                    onChange={(e) => setNewUser({ ...newUser, panNumber: e.target.value.toUpperCase() })}
-                    disabled={submitting}
-                    className="text-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="resume" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Resume (PDF, optional)
-                </Label>
-                <div className="flex flex-col gap-1.5">
-                  <Input
-                    id="resume"
-                    type="file"
-                    accept="application/pdf,.pdf"
-                    onChange={handleResumeChange}
-                    disabled={submitting}
-                    className="hidden"
-                  />
-                  <label
-                    htmlFor="resume"
-                    className="inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-full border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-                  >
-                    Choose File
-                  </label>
-                  <p className="text-[11px] text-slate-500">
-                    {resumeFile
-                      ? resumeFile.name
-                      : editingUser?.resumeUrl
-                        ? 'Current resume attached'
-                        : 'PDF up to 5MB'}
-                  </p>
-                </div>
-              </div>
-
+            ) : (
+            <form onSubmit={handleSubmitUser} className="space-y-4 pt-1">
               <div className="flex flex-wrap gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="role" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -496,12 +322,10 @@ export default function SuperAdminUsersPage() {
                   </Label>
                   <Select
                     value={newUser.role}
-                    onValueChange={(value) =>
-                      value && setNewUser({ ...newUser, role: value, userType: value === 'FACULTY' ? 'EMPLOYEE' : newUser.userType })
-                    }
+                    onValueChange={(value) => value && setNewUser({ ...newUser, role: value })}
                     disabled={submitting}
                   >
-                    <SelectTrigger className="w-32 text-sm">
+                    <SelectTrigger className="w-40 text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -509,29 +333,6 @@ export default function SuperAdminUsersPage() {
                       <SelectItem value="FACULTY">Faculty</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    User Type
-                  </Label>
-                  <Select
-                    value={newUser.userType}
-                    onValueChange={(value) => value && setNewUser({ ...newUser, userType: value })}
-                    disabled={submitting || newUser.role === 'FACULTY'}
-                  >
-                    <SelectTrigger className="w-36 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="EMPLOYEE">Employee</SelectItem>
-                      <SelectItem value="INTERN">Intern</SelectItem>
-                      <SelectItem value="CONTRACTUAL">Contractual</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {newUser.role === 'FACULTY' && (
-                    <p className="text-[10px] text-slate-400">Faculty are always Employees</p>
-                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -559,71 +360,98 @@ export default function SuperAdminUsersPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {newUser.role === 'FACULTY' ? (
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Basic Salary</Label>
+                  <Label htmlFor="empCode" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Employee Code
+                  </Label>
                   <Input
-                    type="number"
-                    placeholder='Enter Basic Salary'
-                    min="0"
-                    value={newUser.basicSalary}
-                    onChange={(e) => setNewUser({ ...newUser, basicSalary: e.target.value })}
+                    id="empCode"
+                    placeholder="e.g. FAC1029"
+                    value={newUser.empCode}
+                    onChange={(e) => setNewUser({ ...newUser, empCode: e.target.value })}
+                    required
+                    disabled={submitting}
                     className="text-sm"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">HRA</Label>
-                  <Input
-                    type="number"
-                    placeholder='Enter HRA'
-                    min="0"
-                    value={newUser.hra}
-                    onChange={(e) => setNewUser({ ...newUser, hra: e.target.value })}
-                    className="text-sm"
-                  />
-                </div>
-              </div>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="name" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Name
+                    </Label>
+                    <Input
+                      id="name"
+                      type="text"
+                      placeholder="Enter name"
+                      value={newUser.name}
+                      onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                      disabled={submitting}
+                      className="text-sm"
+                    />
+                  </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">TDS % (optional)</Label>
-                  <Input
-                    type="number"
-                    placeholder='Enter TDS %'
-                    min="0"
-                    max="100"
-                    value={newUser.tdsPercent}
-                    onChange={(e) => setNewUser({ ...newUser, tdsPercent: e.target.value })}
-                    className="text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">PF % (optional)</Label>
-                  <Input
-                    type="number"
-                    placeholder='Enter PF %'
-                    min="0"
-                    max="100"
-                    value={newUser.pfPercent}
-                    onChange={(e) => setNewUser({ ...newUser, pfPercent: e.target.value })}
-                    className="text-sm"
-                  />
-                </div>
-              </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="email" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Email
+                    </Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="Enter email"
+                      value={newUser.email}
+                      onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                      required
+                      disabled={submitting}
+                      className="text-sm"
+                    />
+                  </div>
 
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Apply LOP</p>
-                  <p className="text-[11px] text-slate-400">[(BASIC + HRA - (TDS + PF)) / daysInMonth] * unpaid leaves; half-day rule applies</p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="phoneNumber" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Phone Number (optional)
+                    </Label>
+                    <Input
+                      id="phoneNumber"
+                      placeholder="10-digit mobile"
+                      value={newUser.phoneNumber}
+                      onChange={(e) => setNewUser({ ...newUser, phoneNumber: e.target.value })}
+                      disabled={submitting}
+                      className="text-sm"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="photo" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Photo
+                </Label>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <EntityAvatar
+                    name={newUser.name}
+                    fallbackText={newUser.email || newUser.empCode || 'User'}
+                    imageUrl={photoPreview}
+                    className="h-12 w-12 border border-slate-200"
+                  />
+                  <div className="flex flex-col gap-1.5 sm:flex-1">
+                    <Input id="photo" type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+                    <label
+                      htmlFor="photo"
+                      className="inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-full border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 sm:w-fit"
+                    >
+                      Choose File
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      {photoFile
+                        ? photoFile.name
+                        : editingUser?.photoUrl
+                          ? 'Current photo attached'
+                          : 'PNG, JPG, or WEBP up to 2MB'}
+                    </p>
+                  </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setNewUser({ ...newUser, lopEnabled: !newUser.lopEnabled })}
-                >
-                  {newUser.lopEnabled ? 'Enabled' : 'Disabled'}
-                </Button>
               </div>
 
               {error && (
@@ -660,6 +488,7 @@ export default function SuperAdminUsersPage() {
                 </Button>
               </div>
             </form>
+            )}
           </DialogContent>
         </Dialog>
       </div>
@@ -693,12 +522,10 @@ export default function SuperAdminUsersPage() {
           departments={departments}
           filterOrg={filterOrg}
           filterRole={filterRole}
-          filterUserType={filterUserType}
           filterMonth={filterMonth}
           filterYear={filterYear}
           onOrgChange={setFilterOrg}
           onRoleChange={setFilterRole}
-          onUserTypeChange={setFilterUserType}
           onMonthChange={setFilterMonth}
           onYearChange={setFilterYear}
           exportData={exportData}
