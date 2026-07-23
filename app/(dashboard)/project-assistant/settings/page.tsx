@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { format } from "date-fns"
-import { Camera, IdCard, Save } from "lucide-react"
+import { Camera, IdCard, Save, Trash2 } from "lucide-react"
 import { toast } from "react-hot-toast"
+import { useSession } from "next-auth/react"
 
 import { Button } from "@/components/ui/button"
 import Lanyard from "@/components/shared/lanyard"
@@ -24,6 +25,7 @@ type Profile = {
 }
 
 export default function SettingsPage() {
+  const { update } = useSession()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -80,6 +82,42 @@ export default function SettingsPage() {
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
+  async function handleRemovePhoto() {
+    if (!profile) return
+
+    // An unsaved selection is cleared locally without touching the server.
+    if (photoFile) {
+      setPhotoFile(null)
+      setPhotoPreview(profile.photoUrl || null)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+      return
+    }
+
+    if (!profile.photoUrl) return
+
+    setSaving(true)
+    try {
+      const formData = new FormData()
+      formData.append("removePhoto", "true")
+
+      const res = await fetch("/api/users/me", { method: "PATCH", body: formData })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || "Failed to remove photo")
+
+      // Clear the photo from the auth session so the header avatar updates live.
+      await update({ photoUrl: null })
+
+      toast.success("Photo removed")
+      setPhotoPreview(null)
+      await load()
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove photo")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleSave() {
     if (!profile || !dirty) return
 
@@ -98,6 +136,9 @@ export default function SettingsPage() {
       const res = await fetch("/api/users/me", { method: "PATCH", body: formData })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || "Failed to update profile")
+
+      // Reflect the change in the auth session so the header avatar/name update live.
+      await update({ name: data.user?.username, photoUrl: data.user?.photoUrl ?? null })
 
       toast.success("Profile updated")
       setPhotoFile(null)
@@ -179,13 +220,26 @@ export default function SettingsPage() {
               onChange={handlePhotoChange}
             />
 
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-700 underline-offset-4 transition-colors hover:text-slate-900 hover:underline"
-            >
-              <Camera className="h-4 w-4 cursor-pointer" /> Choose Photo
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-700 underline-offset-4 transition-colors hover:text-slate-900 hover:underline"
+              >
+                <Camera className="h-4 w-4 cursor-pointer" /> Choose Photo
+              </button>
+
+              {(photoFile || profile.photoUrl) && (
+                <button
+                  type="button"
+                  onClick={handleRemovePhoto}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 underline-offset-4 transition-colors hover:text-red-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4 cursor-pointer" /> Remove Photo
+                </button>
+              )}
+            </div>
             <p className="mt-1.5 text-[11px] text-slate-400">JPG, PNG or WebP · 4MB maximum</p>
           </div>
 
@@ -238,7 +292,7 @@ export default function SettingsPage() {
                 <Button
                   onClick={handleSave}
                   disabled={!dirty || saving}
-                  className="h-9 cursor-pointer rounded-md bg-slate-900 px-4 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="h-9 cursor-pointer rounded-md bg-indigo-600 px-4 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Save className="mr-1.5 h-3.5 w-3.5" /> {saving ? "Saving…" : "Save changes"}
                 </Button>
@@ -264,7 +318,6 @@ export default function SettingsPage() {
                 label="Joining date"
                 value={profile.joiningDate ? format(new Date(profile.joiningDate), "d MMMM yyyy") : null}
               />
-              <Field label="Member since" value={format(new Date(profile.createdAt), "d MMMM yyyy")} />
             </dl>
           </section>
         </div>

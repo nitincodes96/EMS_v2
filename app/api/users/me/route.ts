@@ -24,7 +24,14 @@ export async function GET() {
       availabilitySince: true,
       joiningDate: true,
       createdAt: true,
-      department: { select: { id: true, name: true, logoUrl: true } },
+      department: {
+        select: {
+          id: true,
+          name: true,
+          logoUrl: true,
+          organization: { select: { id: true, name: true, logoURL: true } },
+        },
+      },
     },
   })
 
@@ -32,7 +39,16 @@ export async function GET() {
     return NextResponse.json({ error: "User not found" }, { status: 404 })
   }
 
-  return NextResponse.json({ user })
+  // Resolve the user's organization. Users linked to a department inherit it from
+  // there; admins register the org directly and may have no department, so fall
+  // back to the single organization on record.
+  const org =
+    user.department?.organization ??
+    (await prisma.organization.findFirst({ select: { id: true, name: true, logoURL: true } }))
+
+  const organization = org ? { id: org.id, name: org.name, logoUrl: org.logoURL } : null
+
+  return NextResponse.json({ user: { ...user, organization } })
 }
 
 export async function PATCH(request: Request) {
@@ -51,6 +67,7 @@ export async function PATCH(request: Request) {
 
     const usernameRaw = formData.get("username") as string | null
     const photo = formData.get("photo") as File | null
+    const removePhoto = formData.get("removePhoto") === "true"
 
     const data: Record<string, unknown> = {}
 
@@ -63,7 +80,9 @@ export async function PATCH(request: Request) {
     }
 
     let newPhotoUrl: string | undefined
-    if (photo && photo.size > 0) {
+    if (removePhoto) {
+      data.photoUrl = null
+    } else if (photo && photo.size > 0) {
       newPhotoUrl = await saveUploadedFile(photo, "users")
       data.photoUrl = newPhotoUrl
     }
@@ -72,14 +91,29 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "No recognized fields to update" }, { status: 400 })
     }
 
-    const updated = await prisma.user.update({ where: { id: sessionUser.id }, data })
+    const updated = await prisma.user.update({
+      where: { id: sessionUser.id },
+      data,
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        email: true,
+        empCode: true,
+        phoneNumber: true,
+        photoUrl: true,
+        role: true,
+        joiningDate: true,
+        createdAt: true,
+      },
+    })
 
-    if (newPhotoUrl && target.photoUrl && target.photoUrl !== newPhotoUrl) {
+    // Remove the previous file from disk when the photo was replaced or cleared.
+    if ((newPhotoUrl || removePhoto) && target.photoUrl && target.photoUrl !== newPhotoUrl) {
       await deleteUploadedFile(target.photoUrl)
     }
 
-    const { password: _password, ...userWithoutPassword } = updated
-    return NextResponse.json({ user: userWithoutPassword })
+    return NextResponse.json({ user: updated })
   } catch (error) {
     console.error("Error updating profile:", error)
     return NextResponse.json({ error: "Failed to update profile" }, { status: 500 })

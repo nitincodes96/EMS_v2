@@ -126,7 +126,7 @@ export const authOptions: NextAuthOptions = {
     strategy: "jwt",
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.role = user.role;
         token.id = user.id;
@@ -134,6 +134,20 @@ export const authOptions: NextAuthOptions = {
         token.photoUrl = (user as { photoUrl?: string | null }).photoUrl ?? null;
         token.isActive = true;
       }
+
+      // Client-initiated session refresh (e.g. after editing the profile in
+      // Settings). Only name/photo can change this way; role, id and department
+      // remain server-controlled.
+      if (trigger === "update" && session) {
+        const next = session as { name?: string | null; photoUrl?: string | null };
+        if (typeof next.name === "string" && next.name.trim()) {
+          token.name = next.name.trim();
+        }
+        if ("photoUrl" in next) {
+          token.photoUrl = next.photoUrl ?? null;
+        }
+      }
+
       return token;
     },
     async session({ session, token }) {
