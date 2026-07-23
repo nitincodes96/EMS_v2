@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
-import { startOfDay } from "date-fns"
 import prisma from "@/lib/prisma"
 import { getSessionUser, hasRole } from "@/lib/api-auth"
 import { createNotification } from "@/lib/notifications"
+import { isValidWorkType } from "@/lib/work-types"
 
 // GET: role-scoped booking list
 //  - FACULTY: bookings they created
@@ -48,16 +48,21 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { paId, date, startTime, endTime, task } = body as {
+    const { paId, date, startTime, endTime, task, workType } = body as {
       paId: string
       date: string
       startTime: string
       endTime: string
       task: string
+      workType?: string
     }
 
     if (!paId || !date || !startTime || !endTime || !task?.trim()) {
       return NextResponse.json({ error: "PA, date, time slot and task are required" }, { status: 400 })
+    }
+
+    if (workType != null && !isValidWorkType(workType)) {
+      return NextResponse.json({ error: "Invalid work type" }, { status: 400 })
     }
 
     const pa = await prisma.user.findUnique({ where: { id: paId } })
@@ -73,7 +78,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "PA has no department" }, { status: 400 })
     }
 
-    const bookingDate = startOfDay(new Date(date))
+    // Store the calendar date as UTC midnight so the @db.Date column keeps the
+    // exact day the faculty picked, regardless of server timezone (matches how
+    // leaves store their dates). startOfDay() would localize and shift the day.
+    const bookingDate = new Date(`${date}T00:00:00.000Z`)
     const start = new Date(`${date}T${startTime}`)
     const end = new Date(`${date}T${endTime}`)
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
@@ -115,6 +123,7 @@ export async function POST(request: Request) {
         date: bookingDate,
         startTime: start,
         endTime: end,
+        workType: workType ?? null,
         task: task.trim(),
         status: "BOOKED",
       },

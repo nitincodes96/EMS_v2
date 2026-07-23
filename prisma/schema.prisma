@@ -172,6 +172,7 @@ model Booking {
   date      DateTime      @db.Date
   startTime DateTime
   endTime   DateTime
+  workType  String?
   task      String        @db.Text
   status    BookingStatus @default(BOOKED)
 

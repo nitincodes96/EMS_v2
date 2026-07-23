@@ -44,10 +44,8 @@ const NAV_ITEMS = {
 
   FACULTY: [
     { title: "Dashboard", url: "/faculty/dashboard", icon: LayoutDashboard },
-    { title: "Attendance", url: "/faculty/attendance", icon: Watch },
     { title: "Book a PA", url: "/faculty/book-pa", icon: CalendarPlus },
     { title: "Bookings", url: "/faculty/bookings", icon: ClipboardList },
-    { title: "Leave", url: "/faculty/leave", icon: Calendar },
     { title: "Settings", url: "/faculty/settings", icon: Settings },
   ],
 

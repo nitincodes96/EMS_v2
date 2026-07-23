@@ -12,6 +12,7 @@ type Booking = {
   date: string
   startTime: string
   endTime: string
+  workType: string | null
   task: string
   status: "BOOKED" | "COMPLETED" | "ABSENT" | "CANCELLED"
   pa: { id: string; name: string | null; username: string; email: string }
@@ -74,6 +75,7 @@ export default function FacultyBookingsPage() {
               <th className="px-4 py-3">Project Assistant</th>
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Slot</th>
+              <th className="px-4 py-3">Work type</th>
               <th className="px-4 py-3">Task</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Actions</th>
@@ -82,11 +84,11 @@ export default function FacultyBookingsPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-slate-400">Loading…</td>
+                <td colSpan={7} className="px-4 py-10 text-center text-slate-400">Loading…</td>
               </tr>
             ) : bookings.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-slate-400">No bookings yet.</td>
+                <td colSpan={7} className="px-4 py-10 text-center text-slate-400">No bookings yet.</td>
               </tr>
             ) : (
               bookings.map((b) => (
@@ -95,6 +97,15 @@ export default function FacultyBookingsPage() {
                   <td className="px-4 py-3 text-slate-600">{format(new Date(b.date), "MMM d, yyyy")}</td>
                   <td className="px-4 py-3 text-slate-600">
                     {format(new Date(b.startTime), "h:mm a")}–{format(new Date(b.endTime), "h:mm a")}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {b.workType ? (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        {b.workType}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
                   </td>
                   <td className="max-w-xs truncate px-4 py-3 text-slate-600">{b.task}</td>
                   <td className="px-4 py-3">

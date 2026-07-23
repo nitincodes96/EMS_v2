@@ -14,6 +14,7 @@ import { passwordRequirements, passwordFieldSchema } from "@/lib/validations/pas
 import { getDashboardPath } from "@/lib/role-routes";
 import { BrandMark } from "@/components/auth/brand-mark";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { KerberosLoginDialog } from "@/components/auth/kerberos-login-dialog";
 
 function LoginForm({ organizationName, logoUrl }: { organizationName: string; logoUrl: string | null }) {
   const router = useRouter();
@@ -129,6 +130,18 @@ function LoginForm({ organizationName, logoUrl }: { organizationName: string; lo
           {isLoading ? "Authenticating..." : "Sign In"}
         </Button>
       </form>
+
+      <div className="mt-6 flex items-center gap-3">
+        <div className="h-px flex-1 bg-slate-200" />
+        <span className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+          Or continue with
+        </span>
+        <div className="h-px flex-1 bg-slate-200" />
+      </div>
+
+      <div className="mt-4">
+        <KerberosLoginDialog />
+      </div>
     </>
   );
 }

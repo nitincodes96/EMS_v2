@@ -2,6 +2,7 @@ import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { mockKerberosAuthenticate } from "@/lib/kerberos-mock";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -40,6 +41,74 @@ export const authOptions: NextAuthOptions = {
 
         if (!isPasswordValid) {
           throw new Error("INVALID_PASSWORD");
+        }
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.username,
+          photoUrl: user.photoUrl,
+          role: user.role,
+          departmentId: user.departmentId,
+        };
+      }
+    }),
+    CredentialsProvider({
+      id: "kerberos",
+      name: "Kerberos",
+      credentials: {
+        kerberosId: { label: "Kerberos ID", type: "text" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        if (!credentials?.kerberosId || !credentials?.password) {
+          throw new Error("MISSING_CREDENTIALS");
+        }
+
+        // TODO: replace with verification against IITD's real Kerberos/SSO
+        // assertion once available. This never trusts client-supplied role
+        // or department — both are derived server-side from the (mock)
+        // assertion, matched against departments that already exist in our
+        // database, and only FACULTY accounts are provisioned this way.
+        const claims = mockKerberosAuthenticate(credentials.kerberosId, credentials.password);
+        if (!claims || !claims.is_verified) {
+          throw new Error("KERBEROS_AUTH_FAILED");
+        }
+
+        if (!claims.roles.includes("faculty")) {
+          throw new Error("NOT_FACULTY");
+        }
+
+        const department = await prisma.department.findUnique({
+          where: { slug: claims.department },
+        });
+        if (!department) {
+          throw new Error("DEPARTMENT_NOT_REGISTERED");
+        }
+
+        let user = await prisma.user.findUnique({ where: { email: claims.email } });
+
+        if (!user) {
+          user = await prisma.user.create({
+            data: {
+              email: claims.email,
+              username: claims.preferred_username,
+              name: claims.name,
+              password: null,
+              role: "FACULTY",
+              departmentId: department.id,
+              isVerified: true,
+              status: "ACCEPTED",
+              isActive: true,
+            },
+          });
+        } else {
+          if (!user.isActive) {
+            throw new Error("ACCOUNT_DEACTIVATED");
+          }
+          if (user.role !== "FACULTY") {
+            throw new Error("ROLE_MISMATCH");
+          }
         }
 
         return {
