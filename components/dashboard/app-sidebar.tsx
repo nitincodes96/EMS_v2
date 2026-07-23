@@ -10,7 +10,8 @@ import {
   Settings,
   Users,
   Watch,
-  Calendar
+  Calendar,
+  CalendarPlus2
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -52,8 +53,9 @@ const NAV_ITEMS = {
 
   PROJECT_ASSISTANT: [
     { title: "Dashboard", url: "/project-assistant/dashboard", icon: LayoutDashboard },
-    { title: "Attendance", url: "/project-assistant/attendance", icon: Watch },
     { title: "My Tasks", url: "/project-assistant/tasks", icon: ClipboardList },
+    { title: "Calendar", url: "/project-assistant/calendar", icon: CalendarPlus2 },
+    { title: "Attendance", url: "/project-assistant/attendance", icon: Watch },
     { title: "Leave", url: "/project-assistant/leave", icon: Calendar },
     { title: "Settings", url: "/project-assistant/settings", icon: Settings },
   ],

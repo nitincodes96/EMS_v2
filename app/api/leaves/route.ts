@@ -121,6 +121,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid date range" }, { status: 400 })
     }
 
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    if (start < todayStart) {
+      return NextResponse.json({ error: "Leave cannot be requested for past dates" }, { status: 400 })
+    }
+
     const VALID_LEAVE_TYPES = ["CASUAL", "SICK", "EARNED", "UNPAID", "OTHER"] as const
     const resolvedType = VALID_LEAVE_TYPES.includes(leaveType as (typeof VALID_LEAVE_TYPES)[number])
       ? (leaveType as (typeof VALID_LEAVE_TYPES)[number])

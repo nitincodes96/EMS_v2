@@ -127,9 +127,10 @@ function Stat({ label, value, accent }: { label: string; value: number; accent?:
 }
 
 function LeaveForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const todayStr = format(new Date(), "yyyy-MM-dd")
   const [leaveType, setLeaveType] = useState("CASUAL")
-  const [startDate, setStartDate] = useState(format(new Date(), "yyyy-MM-dd"))
-  const [endDate, setEndDate] = useState(format(new Date(), "yyyy-MM-dd"))
+  const [startDate, setStartDate] = useState(todayStr)
+  const [endDate, setEndDate] = useState(todayStr)
   const [reason, setReason] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -173,7 +174,11 @@ function LeaveForm({ onClose, onCreated }: { onClose: () => void; onCreated: () 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-slate-600">From</label>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+              <input type="date" value={startDate} min={todayStr} onChange={(e) => {
+                const value = e.target.value
+                setStartDate(value)
+                if (endDate < value) setEndDate(value)
+              }}
                 className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" />
             </div>
             <div>

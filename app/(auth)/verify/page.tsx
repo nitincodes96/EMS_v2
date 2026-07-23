@@ -106,7 +106,7 @@ function VerifyPageContent() {
       // Automatically log the user in
       if (password) {
         const result = await signIn("credentials", {
-          email,
+          identifier: email,
           password,
           redirect: false,
         });
