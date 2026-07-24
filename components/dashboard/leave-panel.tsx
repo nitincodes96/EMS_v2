@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils"
 
 type Leave = {
   id: string
-  leaveType: string
   reason: string | null
   startDate: string
   endDate: string
@@ -18,8 +17,6 @@ type Leave = {
 }
 
 type Summary = { usedLeaveDays: number; pendingLeaves: number }
-
-const LEAVE_TYPES = ["CASUAL", "SICK", "EARNED", "UNPAID", "OTHER"]
 
 const STATUS_STYLES: Record<Leave["status"], string> = {
   PENDING: "bg-amber-50 text-amber-600",
@@ -68,7 +65,6 @@ export function LeavePanel() {
         <table className="w-full text-sm">
           <thead className="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
             <tr>
-              <th className="px-4 py-3">Type</th>
               <th className="px-4 py-3">Dates</th>
               <th className="px-4 py-3">Reason</th>
               <th className="px-4 py-3">Status</th>
@@ -78,7 +74,7 @@ export function LeavePanel() {
           <tbody>
             {leaves.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-slate-400">
+                <td colSpan={4} className="px-4 py-10 text-center text-slate-400">
                   <Plane className="mx-auto mb-2 h-6 w-6 text-slate-300" />
                   No leave requests yet.
                 </td>
@@ -86,8 +82,7 @@ export function LeavePanel() {
             ) : (
               leaves.map((l) => (
                 <tr key={l.id} className="border-b border-slate-50 last:border-0">
-                  <td className="px-4 py-3 font-medium capitalize text-slate-900">{l.leaveType.toLowerCase()}</td>
-                  <td className="px-4 py-3 text-slate-600">
+                  <td className="px-4 py-3 font-medium text-slate-900">
                     {format(new Date(l.startDate), "MMM d")} – {format(new Date(l.endDate), "MMM d, yyyy")}
                   </td>
                   <td className="max-w-xs truncate px-4 py-3 text-slate-600">{l.reason || "—"}</td>
@@ -128,7 +123,6 @@ function Stat({ label, value, accent }: { label: string; value: number; accent?:
 
 function LeaveForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const todayStr = format(new Date(), "yyyy-MM-dd")
-  const [leaveType, setLeaveType] = useState("CASUAL")
   const [startDate, setStartDate] = useState(todayStr)
   const [endDate, setEndDate] = useState(todayStr)
   const [reason, setReason] = useState("")
@@ -137,12 +131,16 @@ function LeaveForm({ onClose, onCreated }: { onClose: () => void; onCreated: () 
 
   async function submit() {
     setError(null)
+    if (!reason.trim()) {
+      setError("Please add a reason for your leave.")
+      return
+    }
     setSubmitting(true)
     try {
       const res = await fetch("/api/leaves", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leaveType, startDate, endDate, reason }),
+        body: JSON.stringify({ startDate, endDate, reason }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || "Failed to submit")
@@ -159,18 +157,6 @@ function LeaveForm({ onClose, onCreated }: { onClose: () => void; onCreated: () 
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-semibold text-slate-900">Apply for leave</h2>
         <div className="mt-5 space-y-4">
-          <div>
-            <label className="text-xs font-medium text-slate-600">Leave type</label>
-            <select
-              value={leaveType}
-              onChange={(e) => setLeaveType(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
-            >
-              {LEAVE_TYPES.map((t) => (
-                <option key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</option>
-              ))}
-            </select>
-          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-slate-600">From</label>
@@ -190,6 +176,7 @@ function LeaveForm({ onClose, onCreated }: { onClose: () => void; onCreated: () 
           <div>
             <label className="text-xs font-medium text-slate-600">Reason</label>
             <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
+              placeholder="Why do you need this leave?"
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" />
           </div>
           {error && <p className="text-xs text-red-600">{error}</p>}

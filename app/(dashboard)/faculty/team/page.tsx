@@ -2,11 +2,11 @@
 
 import { TeamRoster } from "@/components/users/team-roster"
 
-export default function PATeamPage() {
+export default function FacultyTeamPage() {
   return (
     <TeamRoster
       description={(department) =>
-        `Everyone in ${department} — the faculty who can book you, and the assistants you work alongside.`
+        `Everyone in ${department} — the project assistants you can book, and your fellow faculty.`
       }
     />
   )

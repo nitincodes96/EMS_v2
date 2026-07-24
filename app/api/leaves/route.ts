@@ -85,7 +85,6 @@ export async function GET() {
     })),
     leaves: allLeaves.map((leave) => ({
       id: leave.id,
-      leaveType: leave.leaveType,
       reason: leave.reason,
       startDate: leave.startDate,
       endDate: leave.endDate,
@@ -104,11 +103,10 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { startDate, endDate, reason, leaveType } = body as {
+    const { startDate, endDate, reason } = body as {
       startDate: string
       endDate: string
       reason?: string
-      leaveType?: string
     }
 
     if (!startDate || !endDate) {
@@ -127,19 +125,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Leave cannot be requested for past dates" }, { status: 400 })
     }
 
-    const VALID_LEAVE_TYPES = ["CASUAL", "SICK", "EARNED", "UNPAID", "OTHER"] as const
-    const resolvedType = VALID_LEAVE_TYPES.includes(leaveType as (typeof VALID_LEAVE_TYPES)[number])
-      ? (leaveType as (typeof VALID_LEAVE_TYPES)[number])
-      : "CASUAL"
-
     const leave = await prisma.leave.create({
       data: {
         departmentId: sessionUser.departmentId,
         userId: sessionUser.id,
         startDate: start,
         endDate: end,
-        leaveType: resolvedType,
-        reason: reason || null,
+        reason: reason?.trim() || null,
         status: "PENDING",
       },
     })

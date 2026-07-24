@@ -46,7 +46,15 @@ const NAV_ITEMS = {
     { title: "Dashboard", url: "/faculty/dashboard", icon: LayoutDashboard },
     { title: "Book a PA", url: "/faculty/book-pa", icon: CalendarPlus },
     { title: "Bookings", url: "/faculty/bookings", icon: ClipboardList },
+    { title: "Team", url: "/faculty/team", icon: Users },
     { title: "Settings", url: "/faculty/settings", icon: Settings },
+  ],
+
+  MODERATOR: [
+    { title: "Dashboard", url: "/moderator/dashboard", icon: LayoutDashboard },
+    { title: "Leaves", url: "/moderator/leave", icon: Calendar },
+    { title: "Team", url: "/moderator/team", icon: Users },
+    { title: "Settings", url: "/moderator/settings", icon: Settings },
   ],
 
   PROJECT_ASSISTANT: [

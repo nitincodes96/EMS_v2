@@ -11,7 +11,7 @@ export interface User {
   name: string | null
   photoUrl?: string | null
   phoneNumber?: string | null
-  role: "PROJECT_ASSISTANT" | "FACULTY" | "ADMIN"
+  role: "PROJECT_ASSISTANT" | "FACULTY" | "ADMIN" | "MODERATOR"
   isActive: boolean
   status: "INVITED" | "ACCEPTED"
   joiningDate?: string | null

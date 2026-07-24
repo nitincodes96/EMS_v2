@@ -117,7 +117,6 @@ model Leave {
   user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   startDate    DateTime    @db.Date
   endDate      DateTime    @db.Date
-  leaveType    LeaveType   @default(CASUAL)
   reason       String?
   status       LeaveStatus @default(PENDING)
 
@@ -252,6 +251,7 @@ enum Role {
   ADMIN
   FACULTY
   PROJECT_ASSISTANT
+  MODERATOR
 }
 
 enum UserStatus {
@@ -263,14 +263,6 @@ enum LeaveStatus {
   PENDING
   APPROVED
   REJECTED
-}
-
-enum LeaveType {
-  CASUAL
-  SICK
-  EARNED
-  UNPAID
-  OTHER
 }
 
 enum BookingStatus {

@@ -26,8 +26,11 @@ import { PageHeader } from '@/components/shared/page-header'
 import { SearchInput } from '@/components/shared/search-input'
 import { TableSkeleton } from '@/components/dashboard/skeletons'
 import { UserFilter } from '@/components/shared/filters/user-filter'
+import { TablePagination } from '@/components/shared/table-pagination'
 import { EntityAvatar } from '@/components/shared/entity-avatar'
 import { toast } from 'react-hot-toast'
+
+const PAGE_SIZE = 8
 
 function StatCard({
   icon,
@@ -63,6 +66,7 @@ export default function SuperAdminUsersPage() {
   const [filterMonth, setFilterMonth] = useState('all')
   const [filterYear, setFilterYear] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [page, setPage] = useState(1)
   const [error, setError] = useState('')
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [inviteLink, setInviteLink] = useState<string | null>(null)
@@ -195,6 +199,38 @@ export default function SuperAdminUsersPage() {
     return new Map(departments.map((org) => [org.id, org.name]))
   }, [departments])
 
+  // Moderators act across the whole organization, so they carry no department.
+  const isModerator = newUser.role === 'MODERATOR'
+
+  // Clamp against a page a filter change may have left out of range.
+  const safePage = Math.min(page, Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE)))
+  const pagedUsers = filteredUsers.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value)
+    setPage(1)
+  }
+
+  const handleOrgChange = (value: string) => {
+    setFilterOrg(value)
+    setPage(1)
+  }
+
+  const handleRoleChange = (value: string) => {
+    setFilterRole(value)
+    setPage(1)
+  }
+
+  const handleMonthChange = (value: string) => {
+    setFilterMonth(value)
+    setPage(1)
+  }
+
+  const handleYearChange = (value: string) => {
+    setFilterYear(value)
+    setPage(1)
+  }
+
   const fetchDepartments = async () => {
     try {
       const response = await fetch('/api/departments')
@@ -232,7 +268,9 @@ export default function SuperAdminUsersPage() {
     try {
       const formData = new FormData()
       formData.append('role', newUser.role)
-      formData.append('departmentId', newUser.departmentId)
+      if (!isModerator) {
+        formData.append('departmentId', newUser.departmentId)
+      }
       if (newUser.role === 'FACULTY') {
         formData.append('empCode', newUser.empCode)
       } else {
@@ -322,7 +360,14 @@ export default function SuperAdminUsersPage() {
                   </Label>
                   <Select
                     value={newUser.role}
-                    onValueChange={(value) => value && setNewUser({ ...newUser, role: value })}
+                    onValueChange={(value) =>
+                      value &&
+                      setNewUser((prev) => ({
+                        ...prev,
+                        role: String(value),
+                        departmentId: value === 'MODERATOR' ? '' : prev.departmentId,
+                      }))
+                    }
                     disabled={submitting}
                   >
                     <SelectTrigger className="w-40 text-sm">
@@ -331,6 +376,7 @@ export default function SuperAdminUsersPage() {
                     <SelectContent>
                       <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
                       <SelectItem value="FACULTY">Faculty</SelectItem>
+                      <SelectItem value="MODERATOR">Moderator</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -342,11 +388,17 @@ export default function SuperAdminUsersPage() {
                   <Select
                     value={newUser.departmentId}
                     onValueChange={(value) => value && setNewUser({ ...newUser, departmentId: value })}
-                    disabled={submitting}
+                    disabled={submitting || isModerator}
                   >
                     <SelectTrigger className="w-44 text-sm">
                       <SelectValue placeholder="Select org">
-                        {(value) => (typeof value === 'string' ? departmentNameById.get(value) || 'Select org' : 'Select org')}
+                        {(value) =>
+                          isModerator
+                            ? 'Organization-wide'
+                            : typeof value === 'string'
+                              ? departmentNameById.get(value) || 'Select org'
+                              : 'Select org'
+                        }
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
@@ -357,6 +409,11 @@ export default function SuperAdminUsersPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {isModerator && (
+                    <p className="text-[11px] text-slate-400">
+                      Moderators belong to the organization, not a department.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -516,18 +573,19 @@ export default function SuperAdminUsersPage() {
 
       {/* Filters and Search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <SearchInput value={searchQuery} onChange={setSearchQuery} className="w-full sm:max-w-md" />
+        <SearchInput value={searchQuery} onChange={handleSearchChange} className="w-full sm:max-w-md" />
         <UserFilter
           showOrgFilter
+          includeModerator
           departments={departments}
           filterOrg={filterOrg}
           filterRole={filterRole}
           filterMonth={filterMonth}
           filterYear={filterYear}
-          onOrgChange={setFilterOrg}
-          onRoleChange={setFilterRole}
-          onMonthChange={setFilterMonth}
-          onYearChange={setFilterYear}
+          onOrgChange={handleOrgChange}
+          onRoleChange={handleRoleChange}
+          onMonthChange={handleMonthChange}
+          onYearChange={handleYearChange}
           exportData={exportData}
           exportFilename="users-export"
         />
@@ -536,14 +594,23 @@ export default function SuperAdminUsersPage() {
       {loading ? (
         <TableSkeleton rows={6} cols={5} />
       ) : (
-        <UserTable
-          users={filteredUsers}
-          mode="super-admin"
-          departments={departments}
-          onEditUser={openEditDialog}
-          onUserUpdated={fetchUsers}
-          attendanceLinkPrefix="/admin/attendance"
-        />
+        <>
+          <UserTable
+            users={pagedUsers}
+            mode="super-admin"
+            departments={departments}
+            onEditUser={openEditDialog}
+            onUserUpdated={fetchUsers}
+            attendanceLinkPrefix="/admin/attendance"
+          />
+          <TablePagination
+            page={safePage}
+            pageSize={PAGE_SIZE}
+            total={filteredUsers.length}
+            onPageChange={setPage}
+            className="mt-3 rounded-xl border border-slate-100 bg-white"
+          />
+        </>
       )}
     </div>
   )

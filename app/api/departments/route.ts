@@ -9,7 +9,8 @@ type HolidayInput = { name: string; date: string; type: "CUSTOM" | "RELIGIOUS" |
 
 export async function GET() {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || sessionUser.role !== "ADMIN") {
+  // Moderators work across the organization, so they may read the department list.
+  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "MODERATOR")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 

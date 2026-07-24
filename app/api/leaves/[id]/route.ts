@@ -5,7 +5,10 @@ import { createNotification } from "@/lib/notifications"
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY")) {
+  if (
+    !sessionUser ||
+    (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY" && sessionUser.role !== "MODERATOR")
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -18,18 +21,28 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!leave) {
     return NextResponse.json({ error: "Leave not found" }, { status: 404 })
   }
-  if (!canAccessDepartment(sessionUser, leave.departmentId)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  }
 
   // Routing rules (FR-6.2 / FR-6.3):
   //  - Faculty leave requests can be approved ONLY by an Admin.
-  //  - PA leave requests can be approved by a Faculty member or an Admin.
-  if (leave.user.role === "FACULTY" && sessionUser.role !== "ADMIN") {
-    return NextResponse.json({ error: "Only an Admin can decide Faculty leave requests" }, { status: 403 })
-  }
-  if (leave.user.role === "ADMIN") {
-    return NextResponse.json({ error: "Admin leave requests are not managed here" }, { status: 403 })
+  //  - PA leave requests can be approved by a Faculty member (own department),
+  //    a Moderator (any department) or an Admin.
+  if (sessionUser.role === "MODERATOR") {
+    if (leave.user.role !== "PROJECT_ASSISTANT") {
+      return NextResponse.json(
+        { error: "Moderators can only decide Project Assistant leave requests" },
+        { status: 403 }
+      )
+    }
+  } else {
+    if (!canAccessDepartment(sessionUser, leave.departmentId)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+    if (leave.user.role === "FACULTY" && sessionUser.role !== "ADMIN") {
+      return NextResponse.json({ error: "Only an Admin can decide Faculty leave requests" }, { status: 403 })
+    }
+    if (leave.user.role === "ADMIN") {
+      return NextResponse.json({ error: "Admin leave requests are not managed here" }, { status: 403 })
+    }
   }
 
   try {

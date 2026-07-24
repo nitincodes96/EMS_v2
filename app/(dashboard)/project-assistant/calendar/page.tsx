@@ -54,7 +54,6 @@ type Booking = {
 
 type Leave = {
   id: string
-  leaveType: string
   reason: string | null
   startDate: string
   endDate: string
@@ -145,7 +144,7 @@ export default function CalendarPage() {
         push(dayKey(d), {
           id: `leave-${l.id}-${dayKey(d)}`,
           time: "All day",
-          title: `${l.leaveType.charAt(0)}${l.leaveType.slice(1).toLowerCase()} leave`,
+          title: l.reason || "Leave",
           subtitle: l.status === "PENDING" ? "Awaiting approval" : "Approved leave",
           type: "LEAVE",
         })

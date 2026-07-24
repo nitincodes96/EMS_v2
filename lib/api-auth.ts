@@ -4,7 +4,7 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route"
 export type SessionUser = {
   id: string
   email: string | null
-  role: "ADMIN" | "FACULTY" | "PROJECT_ASSISTANT"
+  role: "ADMIN" | "FACULTY" | "PROJECT_ASSISTANT" | "MODERATOR"
   departmentId: string | null
 }
 
@@ -19,6 +19,8 @@ export async function getSessionUser(): Promise<SessionUser | undefined> {
   }
 }
 
+// MODERATOR is intentionally excluded: their remit is organization-wide but limited
+// to PA leave decisions, so the leave routes gate them explicitly instead.
 export function canAccessDepartment(user: SessionUser, departmentId: string): boolean {
   if (user.role === "ADMIN") return true
   if (user.role === "FACULTY") return user.departmentId === departmentId

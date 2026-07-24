@@ -67,7 +67,6 @@ type UpcomingLeave = {
 
 type Leave = {
   id: string
-  leaveType: string
   startDate: string
   endDate: string
   status: "PENDING" | "APPROVED" | "REJECTED"
@@ -96,6 +95,11 @@ type Booking = {
 
 type DayKind = "PRESENT" | "LATE" | "ABSENT" | "LEAVE" | "HOLIDAY"
 
+/** The calendar shows either booked work or attendance history. */
+type CalendarView = "WORK" | "ATTENDANCE"
+
+type WorkKind = "TASK" | "COMPLETED" | "MISSED" | "CANCELLED"
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -112,6 +116,28 @@ const DOT_STYLES: Record<DayKind, string> = {
   HOLIDAY: "bg-indigo-500",
 }
 
+const WORK_DOT_STYLES: Record<WorkKind, string> = {
+  TASK: "bg-indigo-500",
+  COMPLETED: "bg-emerald-500",
+  MISSED: "bg-red-500",
+  CANCELLED: "bg-slate-400",
+}
+
+const ATTENDANCE_LEGEND = [
+  { label: "Present", cls: "bg-emerald-500" },
+  { label: "Late", cls: "bg-amber-500" },
+  { label: "Absent", cls: "bg-red-500" },
+  { label: "Leave", cls: "bg-violet-500" },
+  { label: "Holiday", cls: "bg-indigo-500" },
+] as const
+
+const WORK_LEGEND = [
+  { label: "Booked", cls: "bg-indigo-500" },
+  { label: "Completed", cls: "bg-emerald-500" },
+  { label: "Missed", cls: "bg-red-500" },
+  { label: "Cancelled", cls: "bg-slate-400" },
+] as const
+
 function greeting(now: Date) {
   const h = now.getHours()
   if (h < 12) return "Good morning"
@@ -127,6 +153,7 @@ export default function UserDashboard() {
   const { data: session } = useSession()
   const [month, setMonth] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<Date | null>(new Date())
+  const [calendarView, setCalendarView] = useState<CalendarView>("WORK")
 
   const [department, setDepartment] = useState<DepartmentSummary | null>(null)
   const [attendance, setAttendance] = useState<AttendanceSummary>(null)
@@ -270,7 +297,53 @@ export default function UserDashboard() {
     [holidayLookup, leaveLookup, attendanceLookup, workingDays]
   )
 
-  const selectedMeta = selectedDay ? getDayMeta(selectedDay) : null
+  const bookingsByDay = useMemo(() => {
+    const map: Record<string, Booking[]> = {}
+    for (const booking of bookings) {
+      ;(map[dayKey(new Date(booking.date))] ??= []).push(booking)
+    }
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => a.startTime.localeCompare(b.startTime))
+    }
+    return map
+  }, [bookings])
+
+  /** A booked day's dot reflects the most actionable status on it. */
+  const getWorkMeta = useCallback(
+    (date: Date): { kind: WorkKind; label: string } | null => {
+      const list = bookingsByDay[dayKey(date)]
+      if (!list?.length) return null
+
+      const kind: WorkKind = list.some((b) => b.status === "BOOKED")
+        ? "TASK"
+        : list.some((b) => b.status === "ABSENT")
+          ? "MISSED"
+          : list.some((b) => b.status === "COMPLETED")
+            ? "COMPLETED"
+            : "CANCELLED"
+
+      return { kind, label: `${list.length} task${list.length === 1 ? "" : "s"}` }
+    },
+    [bookingsByDay]
+  )
+
+  const isWorkView = calendarView === "WORK"
+
+  /** One shape for both views, so the grid does not care which is showing. */
+  const metaFor = useCallback(
+    (date: Date): { label: string; dot: string } | null => {
+      if (isWorkView) {
+        const meta = getWorkMeta(date)
+        return meta ? { label: meta.label, dot: WORK_DOT_STYLES[meta.kind] } : null
+      }
+      const meta = getDayMeta(date)
+      return meta ? { label: meta.label, dot: DOT_STYLES[meta.kind] } : null
+    },
+    [isWorkView, getWorkMeta, getDayMeta]
+  )
+
+  const selectedMeta = selectedDay ? metaFor(selectedDay) : null
+  const selectedBookings = selectedDay ? (bookingsByDay[dayKey(selectedDay)] ?? []) : []
 
   // Active booking right now, else the next one still to come today
   const now = new Date()
@@ -550,9 +623,40 @@ export default function UserDashboard() {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">My Attendance Calendar</h2>
-                <p className="text-sm text-slate-500">Track your daily punches and absences.</p>
+                <h2 className="text-lg font-bold text-slate-900">
+                  {isWorkView ? "My Work Calendar" : "My Attendance Calendar"}
+                </h2>
+                <p className="text-sm text-slate-500">
+                  {isWorkView
+                    ? "Slots faculty booked you for."
+                    : "Track your daily punches and absences."}
+                </p>
               </div>
+
+              {/* View toggle — work first, attendance on demand */}
+              <div className="flex items-center rounded-xl bg-slate-50 p-1 ring-1 ring-slate-200">
+                {(
+                  [
+                    { key: "WORK", label: "Work", icon: Briefcase },
+                    { key: "ATTENDANCE", label: "Attendance", icon: Fingerprint },
+                  ] as const
+                ).map(({ key, label, icon: Icon }) => (
+                  <button
+                    key={key}
+                    onClick={() => setCalendarView(key)}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
+                      calendarView === key
+                        ? "bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200"
+                        : "text-slate-500 hover:text-slate-700"
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               <div className="flex items-center gap-2 rounded-xl bg-slate-50 p-1 ring-1 ring-slate-200">
                 <button
                   onClick={() => setMonth((m) => subMonths(m, 1))}
@@ -586,7 +690,7 @@ export default function UserDashboard() {
               ))}
 
               {calendarDays.days.map((day) => {
-                const meta = getDayMeta(day)
+                const meta = metaFor(day)
                 const selected = selectedDay && isSameDay(day, selectedDay)
                 const content = (
                   <button
@@ -605,7 +709,7 @@ export default function UserDashboard() {
                       <span
                         className={cn(
                           "absolute bottom-1.5 h-1.5 w-1.5 rounded-full",
-                          selected ? "bg-white" : DOT_STYLES[meta.kind]
+                          selected ? "bg-white" : meta.dot
                         )}
                       />
                     )}
@@ -633,15 +737,7 @@ export default function UserDashboard() {
             {/* Legend & selected detail */}
             <div className="mt-6 flex flex-col justify-between gap-4 border-t border-slate-100 pt-5 sm:flex-row sm:items-center">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                {(
-                  [
-                    { label: "Present", cls: "bg-emerald-500" },
-                    { label: "Late", cls: "bg-amber-500" },
-                    { label: "Absent", cls: "bg-red-500" },
-                    { label: "Leave", cls: "bg-violet-500" },
-                    { label: "Holiday", cls: "bg-indigo-500" },
-                  ] as const
-                ).map(({ label, cls }) => (
+                {(isWorkView ? WORK_LEGEND : ATTENDANCE_LEGEND).map(({ label, cls }) => (
                   <span key={label} className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
                     <span className={cn("h-2.5 w-2.5 rounded-full", cls)} /> {label}
                   </span>
@@ -652,10 +748,55 @@ export default function UserDashboard() {
                 <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-sm ring-1 ring-slate-200">
                   <CalendarDays className="h-4 w-4 text-indigo-600" />
                   <span className="font-semibold text-slate-900">{format(selectedDay, "MMM d")}:</span>
-                  <span className="text-slate-600">{selectedMeta ? selectedMeta.label : "No record"}</span>
+                  <span className="text-slate-600">
+                    {selectedMeta ? selectedMeta.label : isWorkView ? "No tasks" : "No record"}
+                  </span>
                 </div>
               )}
             </div>
+
+            {/* In the work view, spell out what was booked on the selected day */}
+            {isWorkView && selectedBookings.length > 0 && (
+              <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+                {selectedBookings.map((booking) => (
+                  <div
+                    key={booking.id}
+                    className="flex items-center gap-3 rounded-xl border border-slate-100 px-3 py-2"
+                  >
+                    <EntityAvatar
+                      name={booking.faculty.name}
+                      fallbackText={booking.faculty.username}
+                      imageUrl={booking.faculty.photoUrl}
+                      className="h-8 w-8 shrink-0 border border-slate-200"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-900">
+                        {booking.workType || booking.task}
+                      </p>
+                      <p className="truncate text-xs text-slate-400">
+                        {booking.faculty.name || booking.faculty.username} ·{" "}
+                        {format(new Date(booking.startTime), "h:mm a")}–
+                        {format(new Date(booking.endTime), "h:mm a")}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
+                        booking.status === "COMPLETED"
+                          ? "bg-emerald-50 text-emerald-600"
+                          : booking.status === "ABSENT"
+                            ? "bg-red-50 text-red-600"
+                            : booking.status === "CANCELLED"
+                              ? "bg-slate-100 text-slate-500"
+                              : "bg-indigo-50 text-indigo-600"
+                      )}
+                    >
+                      {booking.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Upcoming leaves */}

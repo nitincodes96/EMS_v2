@@ -28,15 +28,18 @@ const YEAR_OPTIONS: Option[] = [
   }),
 ]
 
+// Moderators sit outside departments, so department-scoped rosters never list
+// them. Only screens that span the whole organization opt the role in.
 const ROLE_OPTIONS: Option[] = [
   { value: "all", label: "All Roles" },
   { value: "PROJECT_ASSISTANT", label: "Project Assistant" },
   { value: "FACULTY", label: "Faculty" },
 ]
 
+const MODERATOR_ROLE_OPTION: Option = { value: "MODERATOR", label: "Moderator" }
+
 const MONTH_ITEMS = toItems(MONTH_OPTIONS)
 const YEAR_ITEMS = toItems(YEAR_OPTIONS)
-const ROLE_ITEMS = toItems(ROLE_OPTIONS)
 
 function toCsv(rows: Record<string, string | number>[]): string {
   if (rows.length === 0) return ""
@@ -75,9 +78,12 @@ export function UserFilter({
   onYearChange,
   exportData,
   exportFilename,
+  includeModerator = false,
 }: {
   showOrgFilter?: boolean
   departments?: { id: string; name: string }[]
+  /** Adds Moderator to the role options — only for organization-wide screens. */
+  includeModerator?: boolean
   filterOrg?: string
   filterRole: string
   filterMonth: string
@@ -96,6 +102,13 @@ export function UserFilter({
     }),
     [departments]
   )
+
+  const roleOptions = useMemo(
+    () => (includeModerator ? [...ROLE_OPTIONS, MODERATOR_ROLE_OPTION] : ROLE_OPTIONS),
+    [includeModerator]
+  )
+
+  const roleItems = useMemo(() => toItems(roleOptions), [roleOptions])
 
   const handleExport = () => {
     const csv = toCsv(exportData)
@@ -132,12 +145,12 @@ export function UserFilter({
         </FilterBlock>
       )}
       <FilterBlock label="Role">
-        <Select items={ROLE_ITEMS} value={filterRole} onValueChange={(v) => v && onRoleChange(String(v))}>
+        <Select items={roleItems} value={filterRole} onValueChange={(v) => v && onRoleChange(String(v))}>
           <SelectTrigger className="h-7 w-32 text-[11px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {ROLE_OPTIONS.map((role) => (
+            {roleOptions.map((role) => (
               <SelectItem key={role.value} value={role.value}>
                 {role.label}
               </SelectItem>

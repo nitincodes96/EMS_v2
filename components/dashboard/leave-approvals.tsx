@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils"
 
 type PendingLeave = {
   id: string
-  leaveType: string
   reason: string | null
   startDate: string
   endDate: string
@@ -21,6 +20,7 @@ const ROLE_LABEL: Record<string, string> = {
   ADMIN: "Admin",
   FACULTY: "Faculty",
   PROJECT_ASSISTANT: "Project Assistant",
+  MODERATOR: "Moderator",
 }
 
 export function LeaveApprovals({ title = "Pending approvals" }: { title?: string }) {
@@ -80,14 +80,11 @@ export function LeaveApprovals({ title = "Pending approvals" }: { title?: string
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-500">
                     {ROLE_LABEL[l.user.role] ?? l.user.role}
                   </span>
-                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-indigo-600">
-                    {l.leaveType.toLowerCase()}
-                  </span>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
                   {format(new Date(l.startDate), "MMM d")} – {format(new Date(l.endDate), "MMM d, yyyy")}
-                  {l.reason ? ` · ${l.reason}` : ""}
                 </p>
+                <p className="mt-0.5 text-xs text-slate-600">{l.reason || "No reason given"}</p>
                 <p className="text-[11px] text-slate-400">{l.department.name}</p>
               </div>
               <div className="flex shrink-0 gap-2">

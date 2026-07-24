@@ -8,8 +8,14 @@ import { inviteEmailHtml } from "@/lib/email-templates"
 
 export async function GET(request: Request) {
   const sessionUser = await getSessionUser()
-  // Project assistants get read-only access, scoped to their own department below.
-  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY" && sessionUser.role !== "PROJECT_ASSISTANT")) {
+  // Faculty, PAs and Moderators get read-only access, scoped below.
+  if (
+    !sessionUser ||
+    (sessionUser.role !== "ADMIN" &&
+      sessionUser.role !== "FACULTY" &&
+      sessionUser.role !== "PROJECT_ASSISTANT" &&
+      sessionUser.role !== "MODERATOR")
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -21,7 +27,15 @@ export async function GET(request: Request) {
   const where: Record<string, unknown> = { role: { not: "ADMIN" } }
 
   if (sessionUser.role === "FACULTY" || sessionUser.role === "PROJECT_ASSISTANT") {
-    where.departmentId = sessionUser.departmentId
+    // Their own department only — Faculty and PAs see each other. The fallback
+    // matches nothing, since a null departmentId would otherwise match every
+    // department-less user (i.e. the Moderators).
+    where.departmentId = sessionUser.departmentId ?? "__none__"
+  } else if (sessionUser.role === "MODERATOR") {
+    // Organization-wide: every user in the org, optionally narrowed to one department.
+    if (departmentIdParam && departmentIdParam !== "all") {
+      where.departmentId = departmentIdParam
+    }
   } else if (departmentIdParam && departmentIdParam !== "all") {
     where.departmentId = departmentIdParam
   }
@@ -51,20 +65,26 @@ export async function POST(request: Request) {
 
     let role = String(formData.get("role") || "PROJECT_ASSISTANT")
     if (role === "ADMIN") role = "PROJECT_ASSISTANT"
+    // A Moderator decides leave for every department, so only an Admin may appoint one.
+    if (role === "MODERATOR" && sessionUser.role !== "ADMIN") role = "PROJECT_ASSISTANT"
 
     const name = String(formData.get("name") || "").trim()
     const departmentId = String(formData.get("departmentId") || "")
+    // Moderators belong to the organization, so they are created without a department.
+    const isModerator = role === "MODERATOR"
 
-    if (!departmentId) {
+    if (!departmentId && !isModerator) {
       return NextResponse.json({ error: "Department is required" }, { status: 400 })
     }
 
-    if (!canAccessDepartment(sessionUser, departmentId)) {
+    if (departmentId && !canAccessDepartment(sessionUser, departmentId)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    const department = await prisma.department.findUnique({ where: { id: departmentId } })
-    if (!department) {
+    const department = isModerator
+      ? null
+      : await prisma.department.findUnique({ where: { id: departmentId } })
+    if (!isModerator && !department) {
       return NextResponse.json({ error: "Department not found" }, { status: 404 })
     }
 
@@ -129,8 +149,8 @@ export async function POST(request: Request) {
         username,
         name: name || null,
         password: null,
-        role: "PROJECT_ASSISTANT",
-        departmentId,
+        role: isModerator ? "MODERATOR" : "PROJECT_ASSISTANT",
+        departmentId: isModerator ? null : departmentId,
         isVerified: true,
         status: "INVITED",
         inviteToken,
@@ -142,13 +162,15 @@ export async function POST(request: Request) {
 
     const inviteLink = `${process.env.NEXT_PUBLIC_BASE_URL}/login?invite=${inviteToken}`
     const brandName = await getMailBrandName()
+    // Moderators have no department, so the invite is issued in the org's name.
+    const inviteScopeName = department?.name || brandName
     try {
       await sendMail({
         to: email,
-        subject: `You've been invited to join ${department.name} on ${brandName}`,
+        subject: `You've been invited to join ${inviteScopeName} on ${brandName}`,
         html: inviteEmailHtml({
           name: name || undefined,
-          departmentName: department.name,
+          departmentName: inviteScopeName,
           inviteLink,
           brandName,
         }),
