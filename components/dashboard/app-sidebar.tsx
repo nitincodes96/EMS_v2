@@ -55,6 +55,7 @@ const NAV_ITEMS = {
     { title: "Calendar", url: "/project-assistant/calendar", icon: CalendarPlus2 },
     { title: "Attendance", url: "/project-assistant/attendance", icon: Watch },
     { title: "Leave", url: "/project-assistant/leave", icon: Calendar },
+    { title: "Team", url: "/project-assistant/team", icon: Users },
     { title: "Settings", url: "/project-assistant/settings", icon: Settings },
   ],
 } as const;

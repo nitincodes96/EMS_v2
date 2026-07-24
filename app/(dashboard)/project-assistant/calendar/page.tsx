@@ -52,13 +52,6 @@ const CALENDAR_ENTRIES: Record<string, DayEntry[]> = {
   [iso(11)]: [{ id: "e10", time: "All day", title: "S. Jenkins – Annual Leave", subtitle: "Faculty on leave", type: "LEAVE" }],
 }
 
-const CONTEXTUAL_NOTES: Record<string, string> = {
-  [iso(0)]:
-    "Focus on the mobile responsiveness bottlenecks discussed during the Tuesday standup. Finalize the icon set migration by EOD.",
-  [iso(-1)]: "Bring last quarter's booking numbers to the kickoff meeting.",
-  [iso(2)]: "Dev review covers the attendance geofencing changes — have the test logs ready.",
-}
-
 const TYPE_CHIP: Record<EntryType, string> = {
   TASK: "bg-indigo-50 text-indigo-700",
   COMPLETED: "bg-emerald-50 text-emerald-700",
@@ -85,7 +78,6 @@ export default function CalendarPage() {
   }, [month])
 
   const selectedEntries = CALENDAR_ENTRIES[dayKey(selectedDay)] ?? []
-  const selectedNote = CONTEXTUAL_NOTES[dayKey(selectedDay)]
 
   return (
     <div>
@@ -230,18 +222,6 @@ export default function CalendarPage() {
                 )}
               </div>
             </div>
-
-            {/* Contextual notes */}
-            {selectedNote && (
-              <div className="mt-5 border-t border-slate-100 pt-4">
-                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <StickyNote className="h-3.5 w-3.5" /> Contextual notes
-                </p>
-                <div className="mt-2.5 rounded-xl bg-indigo-50/60 p-3">
-                  <p className="text-xs italic leading-relaxed text-indigo-900">&ldquo;{selectedNote}&rdquo;</p>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>

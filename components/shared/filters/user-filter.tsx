@@ -1,15 +1,42 @@
 "use client"
 
+import { useMemo } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Download } from "lucide-react"
 
-const MONTHS = Array.from({ length: 12 }, (_, i) => ({
-  value: String(i + 1),
-  label: new Date(0, i).toLocaleString("en", { month: "short" }),
-}))
+type Option = { value: string; label: string }
+
+/** Base UI renders the raw value in the trigger unless Root gets an items map. */
+const toItems = (options: Option[]): Record<string, string> =>
+  Object.fromEntries(options.map((o) => [o.value, o.label]))
+
+const MONTH_OPTIONS: Option[] = [
+  { value: "all", label: "Month" },
+  ...Array.from({ length: 12 }, (_, i) => ({
+    value: String(i + 1),
+    label: new Date(0, i).toLocaleString("en", { month: "long" }),
+  })),
+]
+
 const CURRENT_YEAR = new Date().getFullYear()
-const YEARS = Array.from({ length: 5 }, (_, i) => String(CURRENT_YEAR - i))
+const YEAR_OPTIONS: Option[] = [
+  { value: "all", label: "Year" },
+  ...Array.from({ length: 5 }, (_, i) => {
+    const year = String(CURRENT_YEAR - i)
+    return { value: year, label: year }
+  }),
+]
+
+const ROLE_OPTIONS: Option[] = [
+  { value: "all", label: "All Roles" },
+  { value: "PROJECT_ASSISTANT", label: "Project Assistant" },
+  { value: "FACULTY", label: "Faculty" },
+]
+
+const MONTH_ITEMS = toItems(MONTH_OPTIONS)
+const YEAR_ITEMS = toItems(YEAR_OPTIONS)
+const ROLE_ITEMS = toItems(ROLE_OPTIONS)
 
 function toCsv(rows: Record<string, string | number>[]): string {
   if (rows.length === 0) return ""
@@ -62,6 +89,14 @@ export function UserFilter({
   exportData: Record<string, string | number>[]
   exportFilename: string
 }) {
+  const orgItems = useMemo(
+    () => ({
+      all: "All Departments",
+      ...Object.fromEntries(departments.map((org) => [org.id, org.name])),
+    }),
+    [departments]
+  )
+
   const handleExport = () => {
     const csv = toCsv(exportData)
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
@@ -74,10 +109,14 @@ export function UserFilter({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-wrap items-end gap-1.5">
       {showOrgFilter && (
         <FilterBlock label="Department">
-          <Select value={filterOrg ?? "all"} onValueChange={(v) => v && onOrgChange?.(v)}>
+          <Select
+            items={orgItems}
+            value={filterOrg ?? "all"}
+            onValueChange={(v) => v && onOrgChange?.(String(v))}
+          >
             <SelectTrigger className="h-7 w-32 text-[11px]">
               <SelectValue />
             </SelectTrigger>
@@ -93,25 +132,26 @@ export function UserFilter({
         </FilterBlock>
       )}
       <FilterBlock label="Role">
-        <Select value={filterRole} onValueChange={(v) => v && onRoleChange(v)}>
-          <SelectTrigger className="h-7 w-24 text-[11px]">
+        <Select items={ROLE_ITEMS} value={filterRole} onValueChange={(v) => v && onRoleChange(String(v))}>
+          <SelectTrigger className="h-7 w-32 text-[11px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Roles</SelectItem>
-            <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
-            <SelectItem value="FACULTY">Faculty</SelectItem>
+            {ROLE_OPTIONS.map((role) => (
+              <SelectItem key={role.value} value={role.value}>
+                {role.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </FilterBlock>
       <FilterBlock label="Month">
-        <Select value={filterMonth} onValueChange={(v) => v && onMonthChange(v)}>
-          <SelectTrigger className="h-7 w-20 text-[11px]">
+        <Select items={MONTH_ITEMS} value={filterMonth} onValueChange={(v) => v && onMonthChange(String(v))}>
+          <SelectTrigger className="h-7 w-30 text-[11px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Month</SelectItem>
-            {MONTHS.map((m) => (
+            {MONTH_OPTIONS.map((m) => (
               <SelectItem key={m.value} value={m.value}>
                 {m.label}
               </SelectItem>
@@ -120,15 +160,14 @@ export function UserFilter({
         </Select>
       </FilterBlock>
       <FilterBlock label="Year">
-        <Select value={filterYear} onValueChange={(v) => v && onYearChange(v)}>
+        <Select items={YEAR_ITEMS} value={filterYear} onValueChange={(v) => v && onYearChange(String(v))}>
           <SelectTrigger className="h-7 w-20 text-[11px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Year</SelectItem>
-            {YEARS.map((y) => (
-              <SelectItem key={y} value={y}>
-                {y}
+            {YEAR_OPTIONS.map((y) => (
+              <SelectItem key={y.value} value={y.value}>
+                {y.label}
               </SelectItem>
             ))}
           </SelectContent>

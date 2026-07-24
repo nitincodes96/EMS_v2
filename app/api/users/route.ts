@@ -8,7 +8,8 @@ import { inviteEmailHtml } from "@/lib/email-templates"
 
 export async function GET(request: Request) {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY")) {
+  // Project assistants get read-only access, scoped to their own department below.
+  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY" && sessionUser.role !== "PROJECT_ASSISTANT")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
 
   const where: Record<string, unknown> = { role: { not: "ADMIN" } }
 
-  if (sessionUser.role === "FACULTY") {
+  if (sessionUser.role === "FACULTY" || sessionUser.role === "PROJECT_ASSISTANT") {
     where.departmentId = sessionUser.departmentId
   } else if (departmentIdParam && departmentIdParam !== "all") {
     where.departmentId = departmentIdParam
