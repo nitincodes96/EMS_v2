@@ -16,6 +16,8 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const paId = searchParams.get("paId")
   const date = searchParams.get("date")
+  // When rescheduling, the booking being moved shouldn't block its own slots.
+  const excludeBookingId = searchParams.get("excludeBookingId")
 
   if (!paId || !date) {
     return NextResponse.json({ error: "paId and date are required" }, { status: 400 })
@@ -56,6 +58,7 @@ export async function GET(request: Request) {
       paId,
       date: bookingDate,
       status: { in: ["BOOKED", "COMPLETED"] },
+      ...(excludeBookingId ? { id: { not: excludeBookingId } } : {}),
     },
     orderBy: { startTime: "asc" },
     select: { id: true, startTime: true, endTime: true, status: true },

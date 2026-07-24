@@ -23,6 +23,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  Phone,
+  Star,
 } from "lucide-react"
 import { toast } from "react-hot-toast"
 
@@ -31,6 +33,8 @@ import { EntityAvatar } from "@/components/shared/entity-avatar"
 import { WORK_TYPES } from "@/lib/work-types"
 import {
   buildHourlySlots,
+  bookingWindowKeys,
+  BOOKING_HORIZON_DAYS,
   minutesToHHMM,
   minutesToLabel,
   parseHHMM,
@@ -43,10 +47,12 @@ type PADetail = {
   name: string | null
   username: string
   email: string
+  phoneNumber: string | null
   photoUrl: string | null
   isAvailable: boolean
   availabilitySince: string | null
   department: { id: string; name: string } | null
+  rating: { average: number | null; count: number }
 }
 
 type MonthBooking = {
@@ -57,6 +63,8 @@ type MonthBooking = {
   workType: string | null
   task: string
   status: "BOOKED" | "COMPLETED" | "ABSENT" | "CANCELLED"
+  bookedBy: string
+  canViewDetails: boolean
 }
 
 type MonthHoliday = { id: string; date: string; name: string; type: string }
@@ -86,6 +94,50 @@ const CHIP = {
 
 function dayKey(d: Date) {
   return format(d, "yyyy-MM-dd")
+}
+
+/** Five stars filled proportionally to the average (e.g. 4.3 → 86% filled). */
+function AverageStars({ value }: { value: number }) {
+  const pct = Math.max(0, Math.min(100, (value / 5) * 100))
+  return (
+    <span className="relative inline-block leading-none" aria-hidden="true">
+      <span className="flex gap-0.5">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <Star key={n} className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+        ))}
+      </span>
+      <span className="absolute left-0 top-0 overflow-hidden" style={{ width: `${pct}%` }}>
+        <span className="flex w-max gap-0.5">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <Star key={n} className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />
+          ))}
+        </span>
+      </span>
+    </span>
+  )
+}
+
+/** Compact average-rating readout, Play-Store style. */
+function RatingSummary({ average, count }: { average: number | null; count: number }) {
+  if (average == null || count === 0) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1 text-xs text-slate-400">
+        <Star className="h-3.5 w-3.5 text-slate-300" /> No ratings yet
+      </span>
+    )
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-2 rounded-lg bg-amber-50 px-2.5 py-1"
+      title={`${average.toFixed(2)} average from ${count} rating${count > 1 ? "s" : ""}`}
+    >
+      <span className="text-sm font-semibold text-amber-700">{average.toFixed(1)}</span>
+      <AverageStars value={average} />
+      <span className="text-[11px] text-amber-700/70">
+        ({count} rating{count > 1 ? "s" : ""})
+      </span>
+    </span>
+  )
 }
 
 export default function BookPACalendarPage() {
@@ -127,6 +179,8 @@ export default function BookPACalendarPage() {
   }, [loadMonth])
 
   const today = startOfToday()
+  // Bookings are limited to today .. today + BOOKING_HORIZON_DAYS
+  const { horizonKey } = useMemo(() => bookingWindowKeys(), [])
 
   const calendar = useMemo(() => {
     const start = startOfMonth(month)
@@ -189,6 +243,19 @@ export default function BookPACalendarPage() {
                 {pa?.department?.name ? `${pa.department.name} · ` : ""}
                 {pa?.email}
               </p>
+              {pa?.phoneNumber && (
+                <a
+                  href={`tel:${pa.phoneNumber}`}
+                  className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline"
+                >
+                  <Phone className="h-3.5 w-3.5" /> {pa.phoneNumber}
+                </a>
+              )}
+              {pa && (
+                <div className="mt-2">
+                  <RatingSummary average={pa.rating?.average ?? null} count={pa.rating?.count ?? 0} />
+                </div>
+              )}
             </div>
             {pa?.isAvailable && (
               <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold uppercase text-emerald-600">
@@ -249,6 +316,9 @@ export default function BookPACalendarPage() {
               const past = isBefore(day, today)
               const holiday = holidayByDate[key]
               const onLeave = leaveDates.has(key)
+              const beyondHorizon = key > horizonKey
+              // Outside the booking window, on a holiday, or in the past → not bookable
+              const notBookable = past || beyondHorizon || Boolean(holiday)
               const dayBookings = bookingsByDate[key] ?? []
 
               // Chips: holiday, leave, then bookings (max 2 shown)
@@ -258,7 +328,7 @@ export default function BookPACalendarPage() {
               for (const b of dayBookings) {
                 chips.push({
                   key: b.id,
-                  label: `${b.start} · ${b.workType ?? "Task"}`,
+                  label: `${minutesToLabel(parseHHMM(b.start))}–${minutesToLabel(parseHHMM(b.end))} · ${b.workType ?? "Task"}`,
                   cls: b.status === "COMPLETED" ? CHIP.COMPLETED : CHIP.BOOKED,
                 })
               }
@@ -270,9 +340,9 @@ export default function BookPACalendarPage() {
                   key={key}
                   onClick={() => setSelectedDay(day)}
                   className={cn(
-                    "min-h-24 border-b border-r border-slate-100 p-1.5 text-left align-top transition-colors last:border-r-0 hover:bg-indigo-50/40 cursor-pointer",
+                    "min-h-24 cursor-pointer border-b border-r border-slate-100 p-1.5 text-left align-top transition-colors last:border-r-0 hover:bg-indigo-50/40",
                     selected && "bg-indigo-50 ring-2 ring-inset ring-indigo-500",
-                    past && !selected && "bg-slate-50/40"
+                    notBookable && !selected && "bg-slate-50/40"
                   )}
                 >
                   <span
@@ -280,7 +350,7 @@ export default function BookPACalendarPage() {
                       "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
                       isToday(day) && !selected && "bg-indigo-600 text-white",
                       selected && "font-semibold text-indigo-700",
-                      !isToday(day) && !selected && (past ? "text-slate-300" : "text-slate-600")
+                      !isToday(day) && !selected && (notBookable ? "text-slate-300" : "text-slate-600")
                     )}
                   >
                     {format(day, "d")}
@@ -298,6 +368,23 @@ export default function BookPACalendarPage() {
               )
             })}
           </div>
+
+          {/* Booking window + legend */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 px-3 py-2.5 text-[10px] text-slate-400">
+            <span className="font-medium text-slate-500">
+              Bookable: today – {format(new Date(`${horizonKey}T00:00:00`), "MMM d")} (
+              {BOOKING_HORIZON_DAYS} days)
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-sm bg-amber-100" /> Holiday
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-sm bg-red-100" /> On leave
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-sm bg-indigo-100" /> Booked
+            </span>
+          </div>
         </div>
 
         {/* Selected day: agenda + booking form */}
@@ -307,6 +394,7 @@ export default function BookPACalendarPage() {
           dayBookings={selectedBookings}
           holiday={selectedHoliday}
           onLeave={selectedOnLeave}
+          beyondHorizon={selectedKey > horizonKey}
           onBooked={loadMonth}
         />
       </div>
@@ -324,6 +412,7 @@ function DayPanel({
   dayBookings,
   holiday,
   onLeave,
+  beyondHorizon,
   onBooked,
 }: {
   paId: string
@@ -331,6 +420,7 @@ function DayPanel({
   dayBookings: MonthBooking[]
   holiday: MonthHoliday | null
   onLeave: boolean
+  beyondHorizon: boolean
   onBooked: () => void
 }) {
   const date = format(day, "yyyy-MM-dd")
@@ -380,7 +470,10 @@ function DayPanel({
   }, [])
 
   const bookingDisabled = data ? !data.bookingWindow.enabled : false
-  const dayBlocked = (data?.dayUnavailable ?? onLeave) || isPast
+  // Blocked by: approved leave, a past date, a department holiday, or being
+  // outside the rolling booking window.
+  const dayBlocked =
+    (data?.dayUnavailable ?? onLeave) || isPast || beyondHorizon || Boolean(holiday)
 
   const slotState = useCallback(
     (slot: Slot): "available" | "booked" | "past" => {
@@ -471,11 +564,11 @@ function DayPanel({
       </div>
 
       {/* Day notices */}
-      {(holiday || onLeave || isPast) && (
+      {(holiday || onLeave || isPast || beyondHorizon) && (
         <div className="mt-4 space-y-2">
           {holiday && (
             <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
-              Department holiday · {holiday.name}
+              Department holiday · {holiday.name} — bookings aren&apos;t allowed.
             </div>
           )}
           {onLeave && (
@@ -486,6 +579,11 @@ function DayPanel({
           {isPast && !onLeave && (
             <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
               This date has already passed.
+            </div>
+          )}
+          {beyondHorizon && !isPast && (
+            <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
+              Outside the booking window — you can only book up to {BOOKING_HORIZON_DAYS} days ahead.
             </div>
           )}
         </div>
@@ -516,6 +614,17 @@ function DayPanel({
                     <Circle className="h-4 w-4 shrink-0 text-slate-300" />
                   )}
                 </div>
+
+                {b.canViewDetails ? (
+                  <Link
+                    href={`/faculty/bookings/${b.id}`}
+                    className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:underline"
+                  >
+                    View details <ChevronRight className="h-3 w-3" />
+                  </Link>
+                ) : (
+                  <p className="mt-2 text-[11px] text-slate-400">Booked by {b.bookedBy}</p>
+                )}
               </div>
             ))
           )}
@@ -534,7 +643,15 @@ function DayPanel({
           </div>
         ) : dayBlocked ? (
           <div className="mt-2.5 rounded-xl bg-slate-50 px-3 py-3 text-center text-sm text-slate-500">
-            {onLeave ? "PA is unavailable on this day." : isPast ? "You can't book a past date." : "Unavailable."}
+            {onLeave
+              ? "PA is unavailable on this day."
+              : holiday
+                ? "Department holiday — bookings aren't allowed."
+                : isPast
+                  ? "You can't book a past date."
+                  : beyondHorizon
+                    ? `Bookings open up to ${BOOKING_HORIZON_DAYS} days ahead.`
+                    : "Unavailable."}
           </div>
         ) : slots.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-400">No bookable hours in the department window.</p>

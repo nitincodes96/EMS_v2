@@ -1,10 +1,10 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { format } from "date-fns"
-import { Check, UserX } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 type Booking = {
@@ -28,7 +28,6 @@ const STATUS_STYLES: Record<Booking["status"], string> = {
 export default function FacultyBookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -45,26 +44,12 @@ export default function FacultyBookingsPage() {
     void load()
   }, [load])
 
-  async function updateStatus(id: string, status: "COMPLETED" | "ABSENT" | "CANCELLED") {
-    setBusy(id)
-    try {
-      const res = await fetch(`/api/bookings/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      })
-      if (res.ok) await load()
-    } finally {
-      setBusy(null)
-    }
-  }
-
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">My Bookings</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Track PAs you booked. Mark a PA absent if they don&apos;t report for the slot.
+          Track PAs you booked. Open a booking to reschedule, cancel, or record its outcome.
         </p>
       </div>
 
@@ -114,30 +99,14 @@ export default function FacultyBookingsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    {b.status === "BOOKED" ? (
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy === b.id}
-                          onClick={() => updateStatus(b.id, "COMPLETED")}
-                          className="cursor-pointer text-emerald-600 hover:bg-emerald-50"
-                        >
-                          <Check className="mr-1 h-3.5 w-3.5" /> Complete
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy === b.id}
-                          onClick={() => updateStatus(b.id, "ABSENT")}
-                          className="cursor-pointer text-red-600 hover:bg-red-50"
-                        >
-                          <UserX className="mr-1 h-3.5 w-3.5" /> Absent
-                        </Button>
-                      </div>
-                    ) : (
-                      <span className="block text-right text-xs text-slate-300">—</span>
-                    )}
+                    <div className="flex justify-end">
+                      <Link
+                        href={`/faculty/bookings/${b.id}`}
+                        className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600"
+                      >
+                        Manage <ChevronRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))

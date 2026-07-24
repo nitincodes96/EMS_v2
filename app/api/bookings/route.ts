@@ -1,13 +1,46 @@
 import { NextResponse } from "next/server"
+import { Prisma } from "@prisma/client"
 import prisma from "@/lib/prisma"
 import { getSessionUser, hasRole } from "@/lib/api-auth"
 import { createNotification } from "@/lib/notifications"
 import { isValidWorkType } from "@/lib/work-types"
+import { checkSlotAvailability, toBookingDate } from "@/lib/booking-rules"
+
+const LIST_INCLUDE = {
+  faculty: { select: { id: true, name: true, username: true, email: true, photoUrl: true } },
+  pa: { select: { id: true, name: true, username: true, email: true, photoUrl: true } },
+  department: { select: { id: true, name: true } },
+} as const
+
+const DEFAULT_PAGE_SIZE = 12
+const MAX_PAGE_SIZE = 50
+
+/**
+ * Status buckets used by the list UIs. "IN_PROGRESS" covers both a slot that is
+ * running now and one that has ended but has no recorded outcome yet.
+ */
+function bucketWhere(bucket: string | null, now: Date): Prisma.BookingWhereInput {
+  switch (bucket) {
+    case "UPCOMING":
+      return { status: "BOOKED", startTime: { gt: now } }
+    case "IN_PROGRESS":
+      return { status: "BOOKED", startTime: { lte: now } }
+    case "COMPLETED":
+      return { status: "COMPLETED" }
+    case "CLOSED":
+      return { status: { in: ["ABSENT", "CANCELLED"] } }
+    default:
+      return {}
+  }
+}
 
 // GET: role-scoped booking list
 //  - FACULTY: bookings they created
 //  - PROJECT_ASSISTANT: bookings assigned to them
 //  - ADMIN: all bookings (optionally filtered by ?departmentId=)
+//
+// Pagination is opt-in: pass ?page= or ?limit= to get a page plus counts.
+// Without them the full list is returned, which calendar/dashboard views rely on.
 export async function GET(request: Request) {
   const sessionUser = await getSessionUser()
   if (!sessionUser) {
@@ -16,8 +49,11 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const departmentIdParam = searchParams.get("departmentId")
+  const bucket = searchParams.get("bucket")
+  const pageParam = searchParams.get("page")
+  const limitParam = searchParams.get("limit")
 
-  const where =
+  const scopeWhere: Prisma.BookingWhereInput =
     sessionUser.role === "FACULTY"
       ? { facultyId: sessionUser.id }
       : sessionUser.role === "PROJECT_ASSISTANT"
@@ -26,17 +62,51 @@ export async function GET(request: Request) {
           ? { departmentId: departmentIdParam }
           : {}
 
-  const bookings = await prisma.booking.findMany({
-    where,
-    include: {
-      faculty: { select: { id: true, name: true, username: true, email: true, photoUrl: true } },
-      pa: { select: { id: true, name: true, username: true, email: true, photoUrl: true } },
-      department: { select: { id: true, name: true } },
-    },
-    orderBy: [{ date: "desc" }, { startTime: "desc" }],
-  })
+  const now = new Date()
+  const where: Prisma.BookingWhereInput = { ...scopeWhere, ...bucketWhere(bucket, now) }
 
-  return NextResponse.json({ bookings })
+  // Soonest-first makes sense for upcoming work; everything else reads newest-first
+  const orderBy: Prisma.BookingOrderByWithRelationInput[] =
+    bucket === "UPCOMING"
+      ? [{ date: "asc" }, { startTime: "asc" }]
+      : [{ date: "desc" }, { startTime: "desc" }]
+
+  // Legacy/full-list mode
+  if (pageParam === null && limitParam === null) {
+    const bookings = await prisma.booking.findMany({ where, include: LIST_INCLUDE, orderBy })
+    return NextResponse.json({ bookings })
+  }
+
+  const limit = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(1, parseInt(limitParam ?? String(DEFAULT_PAGE_SIZE), 10) || DEFAULT_PAGE_SIZE)
+  )
+  const requestedPage = Math.max(1, parseInt(pageParam ?? "1", 10) || 1)
+
+  const total = await prisma.booking.count({ where })
+  const totalPages = Math.max(1, Math.ceil(total / limit))
+  // Clamp so deleting rows can't strand the client on an empty page
+  const page = Math.min(requestedPage, totalPages)
+
+  const [bookings, upcoming, inProgress, completed] = await Promise.all([
+    prisma.booking.findMany({
+      where,
+      include: LIST_INCLUDE,
+      orderBy,
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    // Stats span every bucket, so they use the scope filter only
+    prisma.booking.count({ where: { ...scopeWhere, status: "BOOKED", startTime: { gt: now } } }),
+    prisma.booking.count({ where: { ...scopeWhere, status: "BOOKED", startTime: { lte: now } } }),
+    prisma.booking.count({ where: { ...scopeWhere, status: "COMPLETED" } }),
+  ])
+
+  return NextResponse.json({
+    bookings,
+    pagination: { page, limit, total, totalPages },
+    stats: { upcoming, inProgress, completed },
+  })
 }
 
 // POST: Faculty (or Admin) books a PA for a slot with a task (FR-4.4/4.5)
@@ -81,38 +151,13 @@ export async function POST(request: Request) {
     // Store the calendar date as UTC midnight so the @db.Date column keeps the
     // exact day the faculty picked, regardless of server timezone (matches how
     // leaves store their dates). startOfDay() would localize and shift the day.
-    const bookingDate = new Date(`${date}T00:00:00.000Z`)
+    const bookingDate = toBookingDate(date)
     const start = new Date(`${date}T${startTime}`)
     const end = new Date(`${date}T${endTime}`)
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
-      return NextResponse.json({ error: "Invalid time slot" }, { status: 400 })
-    }
 
-    // Block booking if PA has approved leave on that date (FR-6.7)
-    const onLeave = await prisma.leave.findFirst({
-      where: {
-        userId: paId,
-        status: "APPROVED",
-        startDate: { lte: bookingDate },
-        endDate: { gte: bookingDate },
-      },
-    })
-    if (onLeave) {
-      return NextResponse.json({ error: "PA is on approved leave for that date" }, { status: 409 })
-    }
-
-    // Prevent overlapping bookings for the same PA
-    const overlap = await prisma.booking.findFirst({
-      where: {
-        paId,
-        date: bookingDate,
-        status: { in: ["BOOKED", "COMPLETED"] },
-        startTime: { lt: end },
-        endTime: { gt: start },
-      },
-    })
-    if (overlap) {
-      return NextResponse.json({ error: "PA already has a booking overlapping this slot" }, { status: 409 })
+    const unavailable = await checkSlotAvailability({ paId, bookingDate, start, end })
+    if (unavailable) {
+      return NextResponse.json({ error: unavailable.error }, { status: unavailable.status })
     }
 
     const booking = await prisma.booking.create({
@@ -133,8 +178,18 @@ export async function POST(request: Request) {
       },
     })
 
-    // Notify the PA (FR-4.5 / FR-5.4)
     const slotLabel = `${startTime}–${endTime}`
+
+    await prisma.bookingLog.create({
+      data: {
+        bookingId: booking.id,
+        action: "CREATED",
+        actorId: sessionUser.id,
+        message: `Booked ${slotLabel} on ${date}${workType ? ` · ${workType}` : ""}`,
+      },
+    })
+
+    // Notify the PA (FR-4.5 / FR-5.4)
     await createNotification({
       userId: paId,
       type: "BOOKING",

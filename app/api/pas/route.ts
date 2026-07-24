@@ -38,6 +38,7 @@ export async function GET(request: Request) {
       name: true,
       username: true,
       email: true,
+      phoneNumber: true,
       photoUrl: true,
       isAvailable: true,
       availabilitySince: true,

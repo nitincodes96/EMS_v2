@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   addMonths,
   eachDayOfInterval,
@@ -13,15 +13,25 @@ import {
   startOfMonth,
   subMonths,
 } from "date-fns"
-import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Circle, Pencil, StickyNote } from "lucide-react"
+import {
+  Ban,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  PartyPopper,
+  Plane,
+  UserX,
+} from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
-// Mock data — swap for a real tasks/leave/holiday API later
+// Types
 // ---------------------------------------------------------------------------
 
-type EntryType = "TASK" | "COMPLETED" | "LEAVE" | "HOLIDAY"
+type EntryType = "TASK" | "COMPLETED" | "ABSENT" | "CANCELLED" | "LEAVE" | "HOLIDAY"
 
 type DayEntry = {
   id: string
@@ -31,65 +41,173 @@ type DayEntry = {
   type: EntryType
 }
 
-const today = new Date()
-const iso = (offsetDays: number) =>
-  format(new Date(today.getFullYear(), today.getMonth(), today.getDate() + offsetDays), "yyyy-MM-dd")
-
-const CALENDAR_ENTRIES: Record<string, DayEntry[]> = {
-  [iso(0)]: [
-    { id: "e1", time: "09:00", title: "Frontend Sprint Review", subtitle: "Room 402 · 1.5 hrs", type: "TASK" },
-    { id: "e2", time: "11:30", title: "Client Proposal Draft", subtitle: "Shared via SharePoint", type: "COMPLETED" },
-    { id: "e3", time: "14:00", title: "API Integration Check", subtitle: "Backend Team · Virtual", type: "TASK" },
-  ],
-  [iso(-4)]: [{ id: "e4", time: "All day", title: "National Holiday", subtitle: "Department closed", type: "HOLIDAY" }],
-  [iso(2)]: [{ id: "e5", time: "10:30", title: "Dev Review", subtitle: "Prof. R. Mehta · Room 210", type: "TASK" }],
-  [iso(4)]: [{ id: "e6", time: "16:00", title: "Project Alpha Launch", subtitle: "All hands · Auditorium", type: "COMPLETED" }],
-  [iso(-1)]: [
-    { id: "e7", time: "09:30", title: "Q4 Kickoff Meeting", subtitle: "Dr. S. Jenkins · Room 101", type: "TASK" },
-    { id: "e8", time: "13:00", title: "Infrastructure Sync", subtitle: "IT Desk · Virtual", type: "COMPLETED" },
-  ],
-  [iso(10)]: [{ id: "e9", time: "All day", title: "S. Jenkins – Annual Leave", subtitle: "Faculty on leave", type: "LEAVE" }],
-  [iso(11)]: [{ id: "e10", time: "All day", title: "S. Jenkins – Annual Leave", subtitle: "Faculty on leave", type: "LEAVE" }],
+type Booking = {
+  id: string
+  date: string
+  startTime: string
+  endTime: string
+  workType: string | null
+  task: string
+  status: "BOOKED" | "COMPLETED" | "ABSENT" | "CANCELLED"
+  faculty: { name: string | null; username: string }
 }
+
+type Leave = {
+  id: string
+  leaveType: string
+  reason: string | null
+  startDate: string
+  endDate: string
+  status: "PENDING" | "APPROVED" | "REJECTED"
+}
+
+type Holiday = { id: string; name: string; date: string; type: string }
 
 const TYPE_CHIP: Record<EntryType, string> = {
   TASK: "bg-indigo-50 text-indigo-700",
   COMPLETED: "bg-emerald-50 text-emerald-700",
-  LEAVE: "bg-red-50 text-red-700",
+  ABSENT: "bg-red-50 text-red-700",
+  CANCELLED: "bg-slate-100 text-slate-500",
+  LEAVE: "bg-violet-50 text-violet-700",
   HOLIDAY: "bg-amber-50 text-amber-700",
 }
 
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
 
-function dayKey(d: Date) {
-  return format(d, "yyyy-MM-dd")
-}
+const dayKey = (d: Date) => format(d, "yyyy-MM-dd")
 
 export default function CalendarPage() {
   const [month, setMonth] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<Date>(new Date())
 
+  const [bookings, setBookings] = useState<Booking[]>([])
+  const [leaves, setLeaves] = useState<Leave[]>([])
+  const [holidays, setHolidays] = useState<Holiday[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [bookingsRes, leavesRes, deptRes] = await Promise.all([
+        fetch("/api/bookings"),
+        fetch("/api/leaves"),
+        fetch("/api/departments/me"),
+      ])
+
+      if (bookingsRes.ok) {
+        const d = await bookingsRes.json()
+        setBookings(d.bookings ?? [])
+      }
+      if (leavesRes.ok) {
+        const d = await leavesRes.json()
+        setLeaves(d.leaves ?? [])
+      }
+      if (deptRes.ok) {
+        const d = await deptRes.json()
+        setHolidays(d.department?.holidays ?? [])
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
   const calendarDays = useMemo(() => {
     const start = startOfMonth(month)
     const end = endOfMonth(month)
-    const days = eachDayOfInterval({ start, end })
-    const leadingBlanks = getDay(start) // 0 = Sunday, grid starts on Sunday
-    return { days, leadingBlanks }
+    return { days: eachDayOfInterval({ start, end }), leadingBlanks: getDay(start) }
   }, [month])
 
-  const selectedEntries = CALENDAR_ENTRIES[dayKey(selectedDay)] ?? []
+  // Bookings, leave days and holidays collapsed into per-day entries
+  const entriesByDay = useMemo(() => {
+    const map: Record<string, DayEntry[]> = {}
+    const push = (key: string, entry: DayEntry) => {
+      ;(map[key] ??= []).push(entry)
+    }
+
+    for (const h of holidays) {
+      push(dayKey(new Date(h.date)), {
+        id: `hol-${h.id}`,
+        time: "All day",
+        title: h.name,
+        subtitle: "Department holiday",
+        type: "HOLIDAY",
+      })
+    }
+
+    for (const l of leaves) {
+      if (l.status === "REJECTED") continue
+      const days = eachDayOfInterval({ start: new Date(l.startDate), end: new Date(l.endDate) })
+      for (const d of days) {
+        push(dayKey(d), {
+          id: `leave-${l.id}-${dayKey(d)}`,
+          time: "All day",
+          title: `${l.leaveType.charAt(0)}${l.leaveType.slice(1).toLowerCase()} leave`,
+          subtitle: l.status === "PENDING" ? "Awaiting approval" : "Approved leave",
+          type: "LEAVE",
+        })
+      }
+    }
+
+    for (const b of bookings) {
+      const type: EntryType =
+        b.status === "COMPLETED"
+          ? "COMPLETED"
+          : b.status === "ABSENT"
+            ? "ABSENT"
+            : b.status === "CANCELLED"
+              ? "CANCELLED"
+              : "TASK"
+      push(dayKey(new Date(b.date)), {
+        id: b.id,
+        time: format(new Date(b.startTime), "h:mm a"),
+        title: b.workType ?? "Assigned task",
+        subtitle: `${b.faculty.name || b.faculty.username} · ${format(new Date(b.startTime), "h:mm a")}–${format(
+          new Date(b.endTime),
+          "h:mm a"
+        )}`,
+        type,
+      })
+    }
+
+    // Keep each day ordered: all-day items first, then by time
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => {
+        const aAll = a.time === "All day" ? 0 : 1
+        const bAll = b.time === "All day" ? 0 : 1
+        return aAll - bAll || a.time.localeCompare(b.time)
+      })
+    }
+    return map
+  }, [bookings, leaves, holidays])
+
+  const selectedEntries = entriesByDay[dayKey(selectedDay)] ?? []
+
+  const monthCount = useMemo(
+    () =>
+      Object.entries(entriesByDay)
+        .filter(([key]) => isSameMonth(new Date(`${key}T00:00:00`), month))
+        .reduce((n, [, list]) => n + list.length, 0),
+    [entriesByDay, month]
+  )
 
   return (
     <div>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{format(month, "MMMM yyyy")}</h1>
-          <p className="mt-1 text-sm text-slate-500">Project Intelligence: Task planning</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {loading ? "Loading your schedule…" : `${monthCount} entr${monthCount === 1 ? "y" : "ies"} this month`}
+          </p>
         </div>
         <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-sm">
           <button
             onClick={() => setMonth((m) => subMonths(m, 1))}
-            className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+            className="cursor-pointer rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Previous month"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -98,13 +216,14 @@ export default function CalendarPage() {
               setMonth(new Date())
               setSelectedDay(new Date())
             }}
-            className="rounded-full px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+            className="cursor-pointer rounded-full px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
           >
             Today
           </button>
           <button
             onClick={() => setMonth((m) => addMonths(m, 1))}
-            className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+            className="cursor-pointer rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Next month"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
@@ -122,13 +241,13 @@ export default function CalendarPage() {
             ))}
           </div>
 
-          <div className="grid grid-cols-7">
+          <div className={cn("grid grid-cols-7", loading && "opacity-50")}>
             {Array.from({ length: calendarDays.leadingBlanks }).map((_, i) => (
               <div key={`blank-${i}`} className="min-h-24 border-b border-r border-slate-100 bg-slate-50/40" />
             ))}
 
             {calendarDays.days.map((day) => {
-              const entries = CALENDAR_ENTRIES[dayKey(day)] ?? []
+              const entries = entriesByDay[dayKey(day)] ?? []
               const selected = isSameDay(day, selectedDay)
               const visible = entries.slice(0, 2)
               const overflow = entries.length - visible.length
@@ -138,9 +257,8 @@ export default function CalendarPage() {
                   key={day.toISOString()}
                   onClick={() => setSelectedDay(day)}
                   className={cn(
-                    "min-h-24 border-b border-r border-slate-100 p-1.5 text-left align-top transition-colors last:border-r-0 hover:bg-indigo-50/40 cursor-pointer",
-                    selected && "bg-indigo-50 ring-2 ring-inset ring-indigo-500",
-                    !isSameMonth(day, month) && "opacity-40"
+                    "min-h-24 cursor-pointer border-b border-r border-slate-100 p-1.5 text-left align-top transition-colors last:border-r-0 hover:bg-indigo-50/40",
+                    selected && "bg-indigo-50 ring-2 ring-inset ring-indigo-500"
                   )}
                 >
                   <span
@@ -163,7 +281,9 @@ export default function CalendarPage() {
                         {entry.title}
                       </div>
                     ))}
-                    {overflow > 0 && <div className="px-1.5 text-[10px] font-medium text-slate-400">+{overflow} more</div>}
+                    {overflow > 0 && (
+                      <div className="px-1.5 text-[10px] font-medium text-slate-400">+{overflow} more</div>
+                    )}
                   </div>
                 </button>
               )
@@ -174,23 +294,21 @@ export default function CalendarPage() {
         {/* Selected day details */}
         <div className="space-y-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">{format(selectedDay, "MMMM d, yyyy")}</h2>
-                <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-500">
-                  Selected day details
-                </p>
-              </div>
-              <Pencil className="h-4 w-4 text-slate-300" />
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">{format(selectedDay, "MMMM d, yyyy")}</h2>
+              <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-500">
+                Selected day details
+              </p>
             </div>
 
             {/* Key indicators */}
             <div className="mt-5">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Key indicators</p>
               <div className="mt-2.5 space-y-2">
-                <Legend dot="bg-indigo-500" label="Assigned Tasks" />
+                <Legend dot="bg-indigo-500" label="Assigned tasks" />
                 <Legend dot="bg-emerald-500" label="Completed" />
-                <Legend dot="bg-red-500" label="Leave / Holidays" />
+                <Legend dot="bg-violet-500" label="Leave" />
+                <Legend dot="bg-amber-500" label="Holiday" />
               </div>
             </div>
 
@@ -211,11 +329,7 @@ export default function CalendarPage() {
                           <p className="mt-0.5 truncate text-sm font-medium text-slate-900">{entry.title}</p>
                           <p className="truncate text-xs text-slate-500">{entry.subtitle}</p>
                         </div>
-                        {entry.type === "COMPLETED" ? (
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-                        ) : (
-                          <Circle className="h-4 w-4 shrink-0 text-slate-300" />
-                        )}
+                        <EntryIcon type={entry.type} />
                       </div>
                     </div>
                   ))
@@ -227,6 +341,16 @@ export default function CalendarPage() {
       </div>
     </div>
   )
+}
+
+function EntryIcon({ type }: { type: EntryType }) {
+  const cls = "h-4 w-4 shrink-0"
+  if (type === "COMPLETED") return <CheckCircle2 className={cn(cls, "text-emerald-500")} />
+  if (type === "ABSENT") return <UserX className={cn(cls, "text-red-500")} />
+  if (type === "CANCELLED") return <Ban className={cn(cls, "text-slate-400")} />
+  if (type === "LEAVE") return <Plane className={cn(cls, "text-violet-500")} />
+  if (type === "HOLIDAY") return <PartyPopper className={cn(cls, "text-amber-500")} />
+  return <Circle className={cn(cls, "text-slate-300")} />
 }
 
 function Legend({ dot, label }: { dot: string; label: string }) {

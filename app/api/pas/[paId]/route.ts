@@ -42,6 +42,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
       name: true,
       username: true,
       email: true,
+      phoneNumber: true,
       photoUrl: true,
       role: true,
       isActive: true,
@@ -62,7 +63,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
   }
 
   // Approved leaves overlapping the requested month, expanded to individual days
-  const [leaves, bookings, holidays] = await Promise.all([
+  const [leaves, bookings, holidays, ratingAgg] = await Promise.all([
     prisma.leave.findMany({
       where: {
         userId: paId,
@@ -79,7 +80,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
         status: { in: ["BOOKED", "COMPLETED"] },
       },
       orderBy: { startTime: "asc" },
-      select: { id: true, date: true, startTime: true, endTime: true, workType: true, task: true, status: true },
+      select: {
+        id: true,
+        date: true,
+        startTime: true,
+        endTime: true,
+        workType: true,
+        task: true,
+        status: true,
+        facultyId: true,
+        faculty: { select: { name: true, username: true } },
+      },
     }),
     prisma.holiday.findMany({
       where: {
@@ -88,6 +99,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
       },
       orderBy: { date: "asc" },
       select: { id: true, name: true, date: true, type: true },
+    }),
+    // Lifetime rating average across every rated booking for this PA
+    prisma.booking.aggregate({
+      where: { paId, rating: { not: null } },
+      _avg: { rating: true },
+      _count: { rating: true },
     }),
   ])
 
@@ -108,10 +125,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
       name: pa.name,
       username: pa.username,
       email: pa.email,
+      phoneNumber: pa.phoneNumber,
       photoUrl: pa.photoUrl,
       isAvailable: pa.isAvailable,
       availabilitySince: pa.availabilitySince,
       department: pa.department,
+      rating: {
+        average: ratingAgg._avg.rating ?? null,
+        count: ratingAgg._count.rating,
+      },
     },
     month: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
     leaveDates: Array.from(leaveDateSet).sort(),
@@ -123,6 +145,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
       workType: b.workType,
       task: b.task,
       status: b.status,
+      bookedBy: b.faculty.name || b.faculty.username,
+      // Only the owning faculty (or an admin) can open the booking's detail page
+      canViewDetails: sessionUser.role === "ADMIN" || b.facultyId === sessionUser.id,
     })),
     holidays: holidays.map((h) => ({
       id: h.id,

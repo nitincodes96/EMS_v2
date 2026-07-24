@@ -104,6 +104,7 @@ model User {
   approvedLeaves  Leave[]        @relation("LeaveApprover")
   notifications   Notification[]
   sessions        UserSession[]
+  bookingLogs     BookingLog[]   @relation("BookingLogActor")
 
   @@index([departmentId])
 }
@@ -176,12 +177,33 @@ model Booking {
   task      String        @db.Text
   status    BookingStatus @default(BOOKED)
 
+  // Faculty's 1–5 star rating of the PA's work on this booking
+  rating   Int?
+  ratedAt  DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  logs BookingLog[]
 
   @@index([departmentId, date])
   @@index([facultyId])
   @@index([paId])
+}
+
+model BookingLog {
+  id        String           @id @default(uuid())
+  bookingId String
+  booking   Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  action    BookingLogAction
+  actorId   String?
+  actor     User?            @relation("BookingLogActor", fields: [actorId], references: [id])
+  message   String           @db.Text
+  remark    String?          @db.Text
+  createdAt DateTime         @default(now())
+
+  @@index([bookingId])
+  @@index([actorId])
 }
 
 model Notification {
@@ -256,6 +278,15 @@ enum BookingStatus {
   COMPLETED
   ABSENT
   CANCELLED
+}
+
+enum BookingLogAction {
+  CREATED
+  RESCHEDULED
+  CANCELLED
+  COMPLETED
+  MARKED_ABSENT
+  RATED
 }
 
 enum NotificationType {

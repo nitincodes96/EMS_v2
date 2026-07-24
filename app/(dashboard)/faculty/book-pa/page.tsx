@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { format } from "date-fns"
-import { CalendarPlus, RefreshCw, Search, UserCheck } from "lucide-react"
+import { CalendarPlus, Mail, Phone, RefreshCw, Search, UserCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +15,7 @@ type PA = {
   name: string | null
   username: string
   email: string
+  phoneNumber: string | null
   photoUrl: string | null
   isAvailable: boolean
   availabilitySince: string | null
@@ -114,37 +115,79 @@ export default function BookPAPage() {
           <p className="text-xs text-slate-400">Try clearing the search or filter.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((pa) => (
-            <div key={pa.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-3">
-                <EntityAvatar
-                  name={pa.name || pa.username}
-                  fallbackText={pa.name || pa.username}
-                  imageUrl={pa.photoUrl}
-                  className="h-11 w-11"
-                />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900">{pa.name || pa.username}</p>
-                  <p className="truncate text-xs text-slate-400">{pa.email}</p>
+            <div
+              key={pa.id}
+              className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all hover:border-indigo-300 hover:shadow-md"
+            >
+              {/* Identity */}
+              <div className="flex items-start gap-3 p-4">
+                <div className="relative shrink-0">
+                  <EntityAvatar
+                    name={pa.name || pa.username}
+                    fallbackText={pa.name || pa.username}
+                    imageUrl={pa.photoUrl}
+                    className="h-12 w-12 ring-2 ring-slate-100"
+                  />
+                  <span
+                    className={cn(
+                      "absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white",
+                      pa.isAvailable ? "bg-emerald-500" : "bg-slate-300"
+                    )}
+                    title={pa.isAvailable ? "Available now" : "Not punched in today"}
+                  />
                 </div>
-                {pa.isAvailable && (
-                  <span className="ml-auto flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-600">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Live
-                  </span>
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-900">{pa.name || pa.username}</p>
+                  <p className="truncate text-xs text-slate-400">@{pa.username}</p>
+                  {pa.isAvailable ? (
+                    <p className="mt-1 text-[11px] font-medium text-emerald-600">
+                      {pa.availabilitySince
+                        ? `Available since ${format(new Date(pa.availabilitySince), "h:mm a")}`
+                        : "Available now"}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-[11px] text-slate-400">Not punched in today</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Contact */}
+              <div className="space-y-1.5 border-t border-slate-100 px-4 py-3">
+                <a
+                  href={`mailto:${pa.email}`}
+                  className="flex items-center gap-2 text-xs text-slate-500 transition-colors hover:text-indigo-600"
+                >
+                  <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  <span className="truncate">{pa.email}</span>
+                </a>
+
+                {pa.phoneNumber ? (
+                  <a
+                    href={`tel:${pa.phoneNumber}`}
+                    className="flex items-center gap-2 text-xs font-medium text-slate-600 transition-colors hover:text-indigo-600"
+                  >
+                    <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="truncate">{pa.phoneNumber}</span>
+                  </a>
+                ) : (
+                  <p className="flex items-center gap-2 text-xs text-slate-300">
+                    <Phone className="h-3.5 w-3.5 shrink-0" /> No phone on file
+                  </p>
                 )}
               </div>
-              {pa.isAvailable && pa.availabilitySince && (
-                <p className="mt-3 text-xs text-slate-400">
-                  Punched in since {format(new Date(pa.availabilitySince), "h:mm a")}
-                </p>
-              )}
-              <Button
-                onClick={() => router.push(`/faculty/book-pa/${pa.id}`)}
-                className="mt-4 w-full rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer"
-              >
-                <CalendarPlus className="mr-1.5 h-4 w-4" /> Open calendar
-              </Button>
+
+              {/* Action */}
+              <div className="mt-auto border-t border-slate-100 p-3">
+                <Button
+                  onClick={() => router.push(`/faculty/book-pa/${pa.id}`)}
+                  className="w-full cursor-pointer rounded-xl bg-indigo-600 text-white hover:bg-indigo-700"
+                >
+                  <CalendarPlus className="mr-1.5 h-4 w-4" /> Open calendar
+                </Button>
+              </div>
             </div>
           ))}
         </div>
