@@ -41,11 +41,12 @@ export function mockKerberosAuthenticate(
   const [, localPart, departmentSlug] = match;
   const nameParts = localPart.split(/[._]/).filter(Boolean);
   const givenName = toTitleCase(nameParts[0] ?? "Faculty");
-  const familyName = toTitleCase(nameParts[1] ?? "Member");
+  // A single-word Kerberos ID has no surname — don't invent one.
+  const familyName = nameParts[1] ? toTitleCase(nameParts[1]) : "";
 
   return {
     sub: localPart,
-    name: `${givenName} ${familyName}`,
+    name: [givenName, familyName].filter(Boolean).join(" "),
     given_name: givenName,
     family_name: familyName,
     email: `${localPart}@${departmentSlug}.iitd.ac.in`,

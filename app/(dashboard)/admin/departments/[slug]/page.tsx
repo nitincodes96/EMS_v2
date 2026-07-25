@@ -67,7 +67,7 @@ interface User {
   name: string | null
   photoUrl?: string | null
   phoneNumber?: string | null
-  role: 'PROJECT_ASSISTANT' | 'FACULTY' | 'ADMIN'
+  role: 'PROJECT_ASSISTANT' | 'FACULTY' | 'ADMIN' | 'MODERATOR'
   isActive: boolean
   status: string
   joiningDate?: string | null
@@ -570,9 +570,8 @@ export default function DepartmentDetailsPage() {
               <DialogHeader>
                 <DialogTitle>Invite User to {org.name}</DialogTitle>
                 <DialogDescription>
-                  {newUser.role === 'FACULTY'
-                    ? 'Faculty accounts have no email — share the setup link with them after creating the account.'
-                    : 'An invite email will be sent to the user. They will set their own password after accepting.'}
+                  An invite email will be sent to the user. They will set their own password after
+                  accepting. Faculty are created automatically on their first Kerberos login.
                 </DialogDescription>
               </DialogHeader>
               {inviteLink ? (
@@ -602,8 +601,8 @@ export default function DepartmentDetailsPage() {
                     <Select value={newUser.role} onValueChange={(value) => value && setNewUser({ ...newUser, role: value })}>
                       <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
                       <SelectContent>
+                        {/* Faculty aren't invited — they're provisioned on first Kerberos login */}
                         <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
-                        <SelectItem value="FACULTY">Faculty</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -737,8 +736,10 @@ export default function DepartmentDetailsPage() {
                       </TableCell>
                       <TableCell className="py-2 hidden sm:table-cell">
                         <span className="text-[11px] text-slate-600 font-medium">
-                          {member.status === 'ACCEPTED' && member.joiningDate
-                            ? format(new Date(member.joiningDate), 'dd MMM yyyy')
+                          {/* joiningDate is only stamped on invite acceptance, so
+                              fall back to the account creation date. */}
+                          {member.status === 'ACCEPTED'
+                            ? format(new Date(member.joiningDate || member.createdAt), 'dd MMM yyyy')
                             : '--'}
                         </span>
                       </TableCell>
@@ -884,14 +885,23 @@ export default function DepartmentDetailsPage() {
                       {leave.reason && (
                         <p className="text-[11px] text-slate-500 line-clamp-1 mb-2 italic">&quot;{leave.reason}&quot;</p>
                       )}
-                      <div className="flex gap-1.5">
-                        <Button size="sm" className="flex-1 h-6 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer px-2" onClick={() => handleLeaveAction(leave.id, 'APPROVED')} disabled={actioningLeaveId === leave.id}>
-                          {actioningLeaveId === leave.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><CheckCircle2 className="h-3 w-3 mr-1" />Approve</>}
-                        </Button>
-                        <Button size="sm" variant="outline" className="flex-1 h-6 text-[11px] border-red-200 text-red-600 hover:bg-red-50 cursor-pointer px-2" onClick={() => handleLeaveAction(leave.id, 'REJECTED')} disabled={actioningLeaveId === leave.id}>
-                          {actioningLeaveId === leave.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><XCircle className="h-3 w-3 mr-1" />Reject</>}
-                        </Button>
-                      </div>
+                      {/* Project Assistant leave is a Moderator's call only, so an
+                          admin sees those rows read-only. Faculty leave is theirs. */}
+                      {leave.user.role === 'PROJECT_ASSISTANT' ? (
+                        <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                          <Clock className="h-3 w-3" />
+                          Awaiting moderator decision
+                        </p>
+                      ) : (
+                        <div className="flex gap-1.5">
+                          <Button size="sm" className="flex-1 h-6 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer px-2" onClick={() => handleLeaveAction(leave.id, 'APPROVED')} disabled={actioningLeaveId === leave.id}>
+                            {actioningLeaveId === leave.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><CheckCircle2 className="h-3 w-3 mr-1" />Approve</>}
+                          </Button>
+                          <Button size="sm" variant="outline" className="flex-1 h-6 text-[11px] border-red-200 text-red-600 hover:bg-red-50 cursor-pointer px-2" onClick={() => handleLeaveAction(leave.id, 'REJECTED')} disabled={actioningLeaveId === leave.id}>
+                            {actioningLeaveId === leave.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><XCircle className="h-3 w-3 mr-1" />Reject</>}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   ))
                 )}

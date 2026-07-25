@@ -100,6 +100,9 @@ export const authOptions: NextAuthOptions = {
               isVerified: true,
               status: "ACCEPTED",
               isActive: true,
+              // Kerberos users never go through the invite flow, so stamp the
+              // joining date here — otherwise it would stay null forever.
+              joiningDate: new Date(),
             },
           });
         } else {

@@ -8,15 +8,13 @@ import { getSessionUser } from "@/lib/api-auth"
 // GET: every leave request the caller is responsible for, in any status.
 // Unlike /api/leaves/pending this includes decided requests, so approver
 // screens can show history and counts alongside the queue.
-//  - FACULTY:   PA leaves in their own department.
 //  - MODERATOR: PA leaves across every department in the organization.
 //  - ADMIN:     Faculty + PA leaves, optionally narrowed by ?departmentId=.
+//               PA rows are read-only for an admin — only a Moderator decides
+//               those (see lib/leave-routing).
 export async function GET(request: Request) {
   const sessionUser = await getSessionUser()
-  if (
-    !sessionUser ||
-    (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY" && sessionUser.role !== "MODERATOR")
-  ) {
+  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "MODERATOR")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -25,19 +23,14 @@ export async function GET(request: Request) {
   const statusParam = searchParams.get("status")
 
   const scope: Prisma.LeaveWhereInput =
-    sessionUser.role === "FACULTY"
-      ? {
-          departmentId: sessionUser.departmentId ?? "__none__",
-          user: { role: "PROJECT_ASSISTANT" },
+    sessionUser.role === "MODERATOR"
+      ? { user: { role: "PROJECT_ASSISTANT" } }
+      : {
+          ...(departmentIdParam && departmentIdParam !== "all"
+            ? { departmentId: departmentIdParam }
+            : {}),
+          user: { role: { in: ["FACULTY", "PROJECT_ASSISTANT"] } },
         }
-      : sessionUser.role === "MODERATOR"
-        ? { user: { role: "PROJECT_ASSISTANT" } }
-        : {
-            ...(departmentIdParam && departmentIdParam !== "all"
-              ? { departmentId: departmentIdParam }
-              : {}),
-            user: { role: { in: ["FACULTY", "PROJECT_ASSISTANT"] } },
-          }
 
   const isKnownStatus =
     statusParam === "PENDING" || statusParam === "APPROVED" || statusParam === "REJECTED"

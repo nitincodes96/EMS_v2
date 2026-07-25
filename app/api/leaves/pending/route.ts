@@ -3,15 +3,12 @@ import prisma from "@/lib/prisma"
 import { getSessionUser } from "@/lib/api-auth"
 
 // GET: leave requests awaiting the caller's decision (approver view).
-//  - FACULTY: pending PA leaves in their department (FR-6.2).
-//  - MODERATOR: pending PA leaves across every department in the organization.
-//  - ADMIN: all pending Faculty + PA leaves (FR-6.3), optional ?departmentId=.
+//  - MODERATOR: pending PA leaves across every department (FR-6.2).
+//  - ADMIN: pending Faculty leaves (FR-6.3), optional ?departmentId=.
+// Faculty do not decide leave, so they get nothing here — see lib/leave-routing.
 export async function GET(request: Request) {
   const sessionUser = await getSessionUser()
-  if (
-    !sessionUser ||
-    (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY" && sessionUser.role !== "MODERATOR")
-  ) {
+  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "MODERATOR")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -19,22 +16,16 @@ export async function GET(request: Request) {
   const departmentIdParam = searchParams.get("departmentId")
 
   const where =
-    sessionUser.role === "FACULTY"
+    sessionUser.role === "MODERATOR"
       ? {
           status: "PENDING" as const,
-          departmentId: sessionUser.departmentId ?? "__none__",
           user: { role: "PROJECT_ASSISTANT" as const },
         }
-      : sessionUser.role === "MODERATOR"
-        ? {
-            status: "PENDING" as const,
-            user: { role: "PROJECT_ASSISTANT" as const },
-          }
-        : {
-            status: "PENDING" as const,
-            ...(departmentIdParam && departmentIdParam !== "all" ? { departmentId: departmentIdParam } : {}),
-            user: { role: { in: ["FACULTY" as const, "PROJECT_ASSISTANT" as const] } },
-          }
+      : {
+          status: "PENDING" as const,
+          ...(departmentIdParam && departmentIdParam !== "all" ? { departmentId: departmentIdParam } : {}),
+          user: { role: "FACULTY" as const },
+        }
 
   const leaves = await prisma.leave.findMany({
     where,

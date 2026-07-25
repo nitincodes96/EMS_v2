@@ -3,6 +3,7 @@ import { format } from "date-fns"
 import prisma from "@/lib/prisma"
 import { getSessionUser } from "@/lib/api-auth"
 import { createNotification } from "@/lib/notifications"
+import { notifyPaOfBooking } from "@/lib/booking-notify"
 import { isValidWorkType } from "@/lib/work-types"
 import {
   checkSlotAvailability,
@@ -104,7 +105,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   try {
     const body = await request.json()
-    const actorName = sessionUser.email ?? "Faculty"
     const rawRemark = typeof body.remark === "string" ? body.remark.trim() : ""
     const remark = rawRemark ? rawRemark.slice(0, 1000) : null
 
@@ -221,12 +221,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         },
       })
 
-      await createNotification({
-        userId: booking.paId,
-        type: "BOOKING",
-        title: "Booking rescheduled",
-        message: `Your booking moved from ${previous} to ${next}.${remark ? ` Note: ${remark}` : ""}`,
-        refId: id,
+      await notifyPaOfBooking({
+        bookingId: id,
+        event: "RESCHEDULED",
+        pa: updated.pa,
+        faculty: updated.faculty,
+        departmentId: updated.departmentId,
+        date: updated.date,
+        startTime: updated.startTime,
+        endTime: updated.endTime,
+        task: updated.task,
+        workType: updated.workType,
+        note: remark,
+        previousLabel: previous,
       })
 
       return NextResponse.json({ booking: updated })
@@ -296,12 +303,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         refId: id,
       })
     } else if (status === "CANCELLED") {
-      await createNotification({
-        userId: booking.paId,
-        type: "BOOKING",
-        title: "Booking cancelled",
-        message: `${actorName} cancelled your ${dayLabel(booking.date)} ${slotLabel(booking.startTime, booking.endTime)} slot.${remark ? ` Note: ${remark}` : ""}`,
-        refId: id,
+      await notifyPaOfBooking({
+        bookingId: id,
+        event: "CANCELLED",
+        pa: updated.pa,
+        faculty: updated.faculty,
+        departmentId: updated.departmentId,
+        date: updated.date,
+        startTime: updated.startTime,
+        endTime: updated.endTime,
+        task: updated.task,
+        workType: updated.workType,
+        note: remark,
       })
     }
 

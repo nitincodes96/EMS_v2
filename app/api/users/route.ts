@@ -68,6 +68,15 @@ export async function POST(request: Request) {
     // A Moderator decides leave for every department, so only an Admin may appoint one.
     if (role === "MODERATOR" && sessionUser.role !== "ADMIN") role = "PROJECT_ASSISTANT"
 
+    // Faculty accounts are provisioned automatically on first Kerberos login,
+    // so they can't be invited from here.
+    if (role === "FACULTY") {
+      return NextResponse.json(
+        { error: "Faculty accounts are created automatically on their first Kerberos login" },
+        { status: 400 }
+      )
+    }
+
     const name = String(formData.get("name") || "").trim()
     const departmentId = String(formData.get("departmentId") || "")
     // Moderators belong to the organization, so they are created without a department.

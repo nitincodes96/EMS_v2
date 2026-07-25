@@ -2,9 +2,9 @@ import { NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import prisma from "@/lib/prisma"
 import { getSessionUser, hasRole } from "@/lib/api-auth"
-import { createNotification } from "@/lib/notifications"
 import { isValidWorkType } from "@/lib/work-types"
 import { checkSlotAvailability, toBookingDate } from "@/lib/booking-rules"
+import { notifyPaOfBooking } from "@/lib/booking-notify"
 
 const LIST_INCLUDE = {
   faculty: { select: { id: true, name: true, username: true, email: true, photoUrl: true } },
@@ -139,6 +139,12 @@ export async function POST(request: Request) {
     if (!pa || pa.role !== "PROJECT_ASSISTANT") {
       return NextResponse.json({ error: "Selected user is not a Project Assistant" }, { status: 400 })
     }
+    if (!pa.isActive || pa.status !== "ACCEPTED") {
+      return NextResponse.json(
+        { error: "This PA hasn't activated their account yet and can't be booked" },
+        { status: 400 }
+      )
+    }
 
     // Faculty may only book PAs in their own department
     if (sessionUser.role === "FACULTY" && pa.departmentId !== sessionUser.departmentId) {
@@ -173,8 +179,8 @@ export async function POST(request: Request) {
         status: "BOOKED",
       },
       include: {
-        faculty: { select: { id: true, name: true, username: true } },
-        pa: { select: { id: true, name: true, username: true } },
+        faculty: { select: { id: true, name: true, username: true, email: true } },
+        pa: { select: { id: true, name: true, username: true, email: true } },
       },
     })
 
@@ -189,13 +195,18 @@ export async function POST(request: Request) {
       },
     })
 
-    // Notify the PA (FR-4.5 / FR-5.4)
-    await createNotification({
-      userId: paId,
-      type: "BOOKING",
-      title: "New task assigned",
-      message: `${booking.faculty.name || booking.faculty.username} booked you for ${slotLabel} on ${date}: ${task.trim()}`,
-      refId: booking.id,
+    // Notify the PA on the dashboard and by email (FR-4.5 / FR-5.4)
+    await notifyPaOfBooking({
+      bookingId: booking.id,
+      event: "CREATED",
+      pa: booking.pa,
+      faculty: booking.faculty,
+      departmentId: booking.departmentId,
+      date: booking.date,
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+      task: booking.task,
+      workType: booking.workType,
     })
 
     return NextResponse.json({ booking }, { status: 201 })

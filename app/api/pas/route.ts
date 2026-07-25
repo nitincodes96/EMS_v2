@@ -31,6 +31,9 @@ export async function GET(request: Request) {
     where: {
       role: "PROJECT_ASSISTANT",
       isActive: true,
+      // Only PAs who accepted their invite — an INVITED account has no password
+      // set yet and can't actually turn up for a slot.
+      status: "ACCEPTED",
       ...departmentFilter,
     },
     select: {

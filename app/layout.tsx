@@ -6,8 +6,8 @@ import "./globals.css";
 import NextTopLoader from "nextjs-toploader";
 import { Toaster } from "react-hot-toast";
 
-const velique = localFont({
-  src: "../public/fonts/Velique Sans Regular.otf",
+const openSans = localFont({
+  src: "../public/fonts/opensans.ttf",
   variable: "--font-sans",
 });
 
@@ -49,7 +49,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${velique.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${openSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <NextTopLoader color="#4f46e5" showSpinner={false} />

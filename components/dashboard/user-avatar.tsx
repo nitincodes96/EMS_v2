@@ -3,6 +3,10 @@
 import { useSession } from "next-auth/react";
 import { EntityAvatar } from "@/components/shared/entity-avatar";
 
+function capitalizeName(name: string): string {
+  return name.replace(/\S+/g, (word) => word[0].toUpperCase() + word.slice(1));
+}
+
 function getInitials(name: string): string {
   return name
     .split(/\s+/)
@@ -46,11 +50,12 @@ export function UserAvatar() {
 
   if (!session?.user) return null;
 
-  const username: string = (session.user as any).username ?? session.user.name ?? "User";
+  const rawUsername: string = (session.user as any).username ?? session.user.name ?? "User";
+  const username = capitalizeName(rawUsername);
   const email: string = session.user.email ?? "";
   const photoUrl = session.user.photoUrl ?? session.user.image ?? null;
   const initials = getInitials(username);
-  const gradientClass = pickColor(username);
+  const gradientClass = pickColor(rawUsername);
 
   return (
     <div className="flex items-center gap-3 group">

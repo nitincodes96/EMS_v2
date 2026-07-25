@@ -1,10 +1,80 @@
 import { NextResponse } from "next/server"
 import { differenceInCalendarDays, endOfYear, max, min, startOfYear } from "date-fns"
+import type { Role } from "@prisma/client"
 import prisma from "@/lib/prisma"
 import { getSessionUser } from "@/lib/api-auth"
+import { leaveRequestEmailHtml } from "@/lib/email-templates"
+import { appLink, displayName, mailBrandName, notifyUsers } from "@/lib/notify"
+import {
+  approverRoleFor,
+  findLeaveApprovers,
+  leaveDateLabel,
+  leaveDays,
+  roleLabel,
+} from "@/lib/leave-routing"
 
 function countLeaveDays(startDate: Date, endDate: Date) {
   return differenceInCalendarDays(endDate, startDate) + 1
+}
+
+/** Where the approver lands when they follow the email's CTA. */
+const REVIEW_PATH: Partial<Record<Role, string>> = {
+  MODERATOR: "/moderator/leave",
+  ADMIN: "/admin/leave",
+}
+
+/**
+ * Tell everyone who can decide this request — Moderators for a PA's leave,
+ * Admins for a Faculty member's — on the dashboard and by email. Delivery
+ * problems are swallowed by notifyUsers so a flaky mail server can never lose
+ * the request itself.
+ */
+async function notifyApprovers(leave: {
+  id: string
+  startDate: Date
+  endDate: Date
+  reason: string | null
+  user: { name: string | null; username: string; email: string | null; role: Role }
+  department: { name: string }
+}) {
+  const approvers = await findLeaveApprovers(leave.user.role)
+  if (approvers.length === 0) {
+    console.warn(
+      `No active ${approverRoleFor(leave.user.role) ?? "approver"} to notify for leave ${leave.id}`
+    )
+    return
+  }
+
+  const requesterName = displayName(leave.user)
+  const dateLabel = leaveDateLabel(leave.startDate, leave.endDate)
+  const days = leaveDays(leave.startDate, leave.endDate)
+  const brandName = await mailBrandName()
+  const reviewLink = appLink(REVIEW_PATH[approverRoleFor(leave.user.role) ?? "MODERATOR"] ?? "/")
+
+  await notifyUsers(
+    approvers.map((approver) => ({
+      userId: approver.id,
+      type: "LEAVE" as const,
+      title: "New leave request",
+      message: `${requesterName} (${leave.department.name}) requested leave for ${dateLabel} · ${days} ${days === 1 ? "day" : "days"}.`,
+      refId: leave.id,
+      email: {
+        to: approver.email,
+        subject: `Leave request from ${requesterName} · ${leave.department.name}`,
+        html: leaveRequestEmailHtml({
+          brandName,
+          approverName: displayName(approver),
+          requesterName,
+          requesterRoleLabel: roleLabel(leave.user.role),
+          departmentName: leave.department.name,
+          dateLabel,
+          days,
+          reason: leave.reason,
+          reviewLink,
+        }),
+      },
+    }))
+  )
 }
 
 export async function GET() {
@@ -134,7 +204,13 @@ export async function POST(request: Request) {
         reason: reason?.trim() || null,
         status: "PENDING",
       },
+      include: {
+        user: { select: { name: true, username: true, email: true, role: true } },
+        department: { select: { name: true } },
+      },
     })
+
+    await notifyApprovers(leave)
 
     return NextResponse.json({ leave }, { status: 201 })
   } catch (error) {

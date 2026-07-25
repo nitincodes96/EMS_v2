@@ -374,8 +374,8 @@ export default function SuperAdminUsersPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      {/* Faculty aren't invited — they're provisioned on first Kerberos login */}
                       <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
-                      <SelectItem value="FACULTY">Faculty</SelectItem>
                       <SelectItem value="MODERATOR">Moderator</SelectItem>
                     </SelectContent>
                   </Select>

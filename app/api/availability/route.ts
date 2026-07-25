@@ -19,6 +19,8 @@ export async function GET() {
     where: {
       role: "PROJECT_ASSISTANT",
       isActive: true,
+      // Invited-but-not-yet-accepted PAs aren't bookable
+      status: "ACCEPTED",
       isAvailable: true,
       ...(sessionUser.role === "FACULTY" ? { departmentId: sessionUser.departmentId } : {}),
     },
