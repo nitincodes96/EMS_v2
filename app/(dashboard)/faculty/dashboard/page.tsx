@@ -75,6 +75,8 @@ export default function FacultyDashboard() {
   const { data: session, status: sessionStatus } = useSession()
   const [bookings, setBookings] = useState<Booking[]>([])
   const [members, setMembers] = useState<User[]>([])
+  const [workingDays, setWorkingDays] = useState<Set<string>>(new Set())
+  const [holidayByDate, setHolidayByDate] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [month, setMonth] = useState(new Date())
@@ -89,10 +91,12 @@ export default function FacultyDashboard() {
       setLoading(true)
       try {
         // /api/bookings returns this faculty's own bookings; /api/users is
-        // scoped to their department.
-        const [bookingsResponse, usersResponse] = await Promise.all([
+        // scoped to their department; /api/departments/me gives the working
+        // days and holidays used to mark the calendar.
+        const [bookingsResponse, usersResponse, deptResponse] = await Promise.all([
           fetch("/api/bookings"),
           fetch("/api/users"),
+          fetch("/api/departments/me"),
         ])
 
         const bookingsData = await bookingsResponse.json()
@@ -102,6 +106,26 @@ export default function FacultyDashboard() {
 
         if (bookingsResponse.ok) setBookings(bookingsData.bookings ?? [])
         if (usersResponse.ok) setMembers(usersData.users ?? [])
+        if (deptResponse.ok) {
+          const deptData = await deptResponse.json()
+          const dept = deptData.department
+          setWorkingDays(
+            new Set(
+              (dept?.workingDays ?? "Mon,Tue,Wed,Thu,Fri")
+                .split(",")
+                .map((x: string) => x.trim())
+                .filter(Boolean)
+            )
+          )
+          setHolidayByDate(
+            Object.fromEntries(
+              (dept?.holidays ?? []).map((h: { name: string; date: string }) => [
+                format(new Date(h.date), "yyyy-MM-dd"),
+                h.name,
+              ])
+            )
+          )
+        }
 
         if (!bookingsResponse.ok && !usersResponse.ok) {
           throw new Error(bookingsData?.error || "Unable to load your dashboard")
@@ -300,8 +324,12 @@ export default function FacultyDashboard() {
             ))}
 
             {calendarDays.days.map((day) => {
-              const entries = bookingsByDay[dayKey(day)] ?? []
+              const key = dayKey(day)
+              const entries = bookingsByDay[key] ?? []
               const selected = isSameDay(day, selectedDay)
+              const holidayName = holidayByDate[key]
+              const nonWorkingDay = workingDays.size > 0 && !workingDays.has(format(day, "EEE"))
+              const off = Boolean(holidayName) || nonWorkingDay
               const visible = entries.slice(0, 2)
               const overflow = entries.length - visible.length
 
@@ -311,7 +339,8 @@ export default function FacultyDashboard() {
                   onClick={() => setSelectedDay(day)}
                   className={cn(
                     "min-h-24 cursor-pointer border-b border-r border-slate-100 p-1.5 text-left align-top transition-colors hover:bg-indigo-50/40",
-                    selected && "bg-indigo-50 ring-2 ring-inset ring-indigo-500"
+                    selected && "bg-indigo-50 ring-2 ring-inset ring-indigo-500",
+                    off && !selected && "bg-slate-50/60"
                   )}
                 >
                   <span
@@ -319,13 +348,25 @@ export default function FacultyDashboard() {
                       "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
                       isToday(day) && !selected && "bg-indigo-600 text-white",
                       selected && !isToday(day) && "font-semibold text-indigo-700",
-                      !isToday(day) && !selected && "text-slate-600"
+                      !isToday(day) && !selected && (off ? "text-slate-300" : "text-slate-600")
                     )}
                   >
                     {format(day, "d")}
                   </span>
 
                   <div className="mt-1 space-y-1">
+                    {holidayName ? (
+                      <div className="truncate rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                        {holidayName}
+                      </div>
+                    ) : (
+                      nonWorkingDay &&
+                      entries.length === 0 && (
+                        <div className="truncate rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
+                          Non-working
+                        </div>
+                      )
+                    )}
                     {visible.map((booking) => (
                       <div
                         key={booking.id}

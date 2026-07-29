@@ -1,14 +1,26 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { format } from "date-fns"
-import { GraduationCap, Users, UserSquare2 } from "lucide-react"
+import { GraduationCap, UserPlus, Users, UserSquare2 } from "lucide-react"
 import { useSession } from "next-auth/react"
+import { toast } from "react-hot-toast"
 
 import { EntityAvatar } from "@/components/shared/entity-avatar"
 import { UserFilter } from "@/components/shared/filters/user-filter"
 import { PageHeader } from "@/components/shared/page-header"
 import { TablePagination } from "@/components/shared/table-pagination"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import type { User } from "@/types"
@@ -75,6 +87,7 @@ function joinedOn(user: User): string {
 export function TeamRoster({
   description,
   scope = "department",
+  canInvite = false,
 }: {
   description?: (scopeName: string) => string
   /**
@@ -82,6 +95,8 @@ export function TeamRoster({
    * "organization" — every department, with a department column and filter (Moderator).
    */
   scope?: "department" | "organization"
+  /** Show the "Invite PA" action (Moderator only, for now). */
+  canInvite?: boolean
 }) {
   const { data: session, status: sessionStatus } = useSession()
   const isOrgScope = scope === "organization"
@@ -99,59 +114,48 @@ export function TeamRoster({
 
   const currentUserId = session?.user?.id
 
+  const loadTeam = useCallback(async () => {
+    setLoading(true)
+    try {
+      // The API scopes /api/users by role: own department for Faculty and PAs,
+      // organization-wide for Moderators.
+      const [usersResponse, scopeResponse] = await Promise.all([
+        fetch("/api/users"),
+        fetch(isOrgScope ? "/api/departments" : "/api/departments/me"),
+      ])
+
+      const usersData = await usersResponse.json()
+      const scopeData = await scopeResponse.json()
+
+      if (!usersResponse.ok) {
+        throw new Error(usersData?.error || "Unable to load members")
+      }
+
+      setMembers(usersData.users || [])
+
+      if (scopeResponse.ok) {
+        if (isOrgScope) {
+          setDepartments(
+            (scopeData.departments || []).map((d: { id: string; name: string }) => ({
+              id: d.id,
+              name: d.name,
+            }))
+          )
+        } else if (scopeData?.department) {
+          setDepartmentName(scopeData.department.name)
+        }
+      }
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load your team")
+    } finally {
+      setLoading(false)
+    }
+  }, [isOrgScope])
+
   useEffect(() => {
     if (sessionStatus === "loading") return
-
-    let active = true
-
-    const loadTeam = async () => {
-      setLoading(true)
-      try {
-        // The API scopes /api/users by role: own department for Faculty and PAs,
-        // organization-wide for Moderators.
-        const [usersResponse, scopeResponse] = await Promise.all([
-          fetch("/api/users"),
-          fetch(isOrgScope ? "/api/departments" : "/api/departments/me"),
-        ])
-
-        const usersData = await usersResponse.json()
-        const scopeData = await scopeResponse.json()
-
-        if (!active) return
-
-        if (!usersResponse.ok) {
-          throw new Error(usersData?.error || "Unable to load members")
-        }
-
-        setMembers(usersData.users || [])
-
-        if (scopeResponse.ok) {
-          if (isOrgScope) {
-            setDepartments(
-              (scopeData.departments || []).map((d: { id: string; name: string }) => ({
-                id: d.id,
-                name: d.name,
-              }))
-            )
-          } else if (scopeData?.department) {
-            setDepartmentName(scopeData.department.name)
-          }
-        }
-      } catch (loadError) {
-        if (active) {
-          setError(loadError instanceof Error ? loadError.message : "Unable to load your team")
-        }
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-
     void loadTeam()
-
-    return () => {
-      active = false
-    }
-  }, [sessionStatus, isOrgScope])
+  }, [sessionStatus, loadTeam])
 
   const stats = useMemo(
     () => ({
@@ -273,9 +277,15 @@ export function TeamRoster({
               {isOrgScope ? "Organization members" : "Department members"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              View-only — reach out to an admin to correct anything listed here.
+              {canInvite
+                ? "Invite Project Assistants and view everyone in the organization."
+                : "View-only — reach out to an admin to correct anything listed here."}
             </p>
           </div>
+
+          {canInvite && (
+            <InvitePADialog departments={departments} onInvited={loadTeam} />
+          )}
 
           <UserFilter
             showOrgFilter={isOrgScope}
@@ -428,6 +438,220 @@ export function TeamRoster({
         )}
       </section>
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Invite a Project Assistant (Moderator). Role is fixed to PA; a department
+// must be chosen since a Moderator isn't tied to one.
+// ---------------------------------------------------------------------------
+
+function InvitePADialog({
+  departments,
+  onInvited,
+}: {
+  departments: { id: string; name: string }[]
+  onInvited: () => void | Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [departmentId, setDepartmentId] = useState("")
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [phoneNumber, setPhoneNumber] = useState("")
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  function reset() {
+    setDepartmentId("")
+    setName("")
+    setEmail("")
+    setPhoneNumber("")
+    setPhotoFile(null)
+    setPhotoPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return null
+    })
+  }
+
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPhotoFile(file)
+    setPhotoPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(file)
+    })
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!departmentId) return toast.error("Please choose a department.")
+
+    setSubmitting(true)
+    try {
+      const form = new FormData()
+      form.set("role", "PROJECT_ASSISTANT")
+      form.set("departmentId", departmentId)
+      form.set("name", name.trim())
+      form.set("email", email.trim())
+      if (phoneNumber.trim()) form.set("phoneNumber", phoneNumber.trim())
+      if (photoFile) form.set("photo", photoFile)
+
+      const res = await fetch("/api/users", { method: "POST", body: form })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error || `Failed to invite (${res.status})`)
+
+      toast.success("Invite sent — the PA will receive an email to set their password.")
+      setOpen(false)
+      reset()
+      await onInvited()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to invite")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) reset()
+      }}
+    >
+      <DialogTrigger
+        render={<Button className="cursor-pointer bg-indigo-600 text-white hover:bg-indigo-700" />}
+      >
+        <UserPlus className="mr-1.5 h-4 w-4" /> Invite PA
+      </DialogTrigger>
+
+      <DialogContent className="bg-white sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-slate-900">Invite a Project Assistant</DialogTitle>
+          <DialogDescription>
+            An invite email is sent so they can set their password and activate their account.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={submit} className="space-y-4 pt-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-dept" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Department
+            </Label>
+            <select
+              id="invite-dept"
+              value={departmentId}
+              onChange={(e) => setDepartmentId(e.target.value)}
+              required
+              disabled={submitting}
+              className="w-full cursor-pointer rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            >
+              <option value="" disabled>
+                Select department
+              </option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-name" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Name
+            </Label>
+            <Input
+              id="invite-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter name"
+              required
+              disabled={submitting}
+              className="text-sm"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-email" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Email
+            </Label>
+            <Input
+              id="invite-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter email"
+              required
+              disabled={submitting}
+              className="text-sm"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-phone" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Phone Number (optional)
+            </Label>
+            <Input
+              id="invite-phone"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              placeholder="10-digit mobile"
+              disabled={submitting}
+              className="text-sm"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="invite-photo" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Photo
+            </Label>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <EntityAvatar
+                name={name}
+                fallbackText={email || "PA"}
+                imageUrl={photoPreview}
+                className="h-12 w-12 border border-slate-200"
+              />
+              <div className="flex flex-col gap-1.5 sm:flex-1">
+                <Input id="invite-photo" type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+                <label
+                  htmlFor="invite-photo"
+                  className="inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-full border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 sm:w-fit"
+                >
+                  Choose File
+                </label>
+                <p className="text-[11px] text-slate-500">
+                  {photoFile ? photoFile.name : "PNG, JPG, or WEBP up to 2MB"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              className="cursor-pointer"
+              onClick={() => setOpen(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              className="cursor-pointer bg-indigo-600 text-white hover:bg-indigo-700"
+              disabled={submitting}
+            >
+              {submitting ? "Sending…" : "Send invite"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

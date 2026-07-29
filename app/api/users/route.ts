@@ -56,7 +56,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const sessionUser = await getSessionUser()
-  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY")) {
+  if (
+    !sessionUser ||
+    (sessionUser.role !== "ADMIN" && sessionUser.role !== "FACULTY" && sessionUser.role !== "MODERATOR")
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -67,6 +70,8 @@ export async function POST(request: Request) {
     if (role === "ADMIN") role = "PROJECT_ASSISTANT"
     // A Moderator decides leave for every department, so only an Admin may appoint one.
     if (role === "MODERATOR" && sessionUser.role !== "ADMIN") role = "PROJECT_ASSISTANT"
+    // Moderators can only invite Project Assistants, into any department.
+    if (sessionUser.role === "MODERATOR") role = "PROJECT_ASSISTANT"
 
     // Faculty accounts are provisioned automatically on first Kerberos login,
     // so they can't be invited from here.
@@ -86,7 +91,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Department is required" }, { status: 400 })
     }
 
-    if (departmentId && !canAccessDepartment(sessionUser, departmentId)) {
+    // Moderators are organization-wide, so they may place a PA in any department.
+    const canAccessTargetDept =
+      sessionUser.role === "MODERATOR" || canAccessDepartment(sessionUser, departmentId)
+    if (departmentId && !canAccessTargetDept) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 

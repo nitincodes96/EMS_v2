@@ -71,6 +71,7 @@ type MonthHoliday = { id: string; date: string; name: string; type: string }
 
 type MonthResponse = {
   pa: PADetail
+  workingDays: string[]
   leaveDates: string[]
   bookings: MonthBooking[]
   holidays: MonthHoliday[]
@@ -90,6 +91,7 @@ const CHIP = {
   COMPLETED: "bg-emerald-50 text-emerald-700",
   LEAVE: "bg-red-50 text-red-700",
   HOLIDAY: "bg-amber-50 text-amber-700",
+  OFF: "bg-slate-100 text-slate-500",
 } as const
 
 function dayKey(d: Date) {
@@ -147,11 +149,25 @@ export default function BookPACalendarPage() {
   const [pa, setPa] = useState<PADetail | null>(null)
   const [month, setMonth] = useState(() => new Date())
   const [leaveDates, setLeaveDates] = useState<Set<string>>(new Set())
+  const [workingDays, setWorkingDays] = useState<Set<string>>(new Set())
   const [bookings, setBookings] = useState<MonthBooking[]>([])
   const [holidays, setHolidays] = useState<MonthHoliday[]>([])
   const [loadingMonth, setLoadingMonth] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [selectedDay, setSelectedDay] = useState<Date>(() => new Date())
+
+  // Honor a ?date= handoff from the directory's availability filter. Read after
+  // mount (not during render) so server and client agree on first paint.
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("date")
+    if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const d = new Date(`${raw}T00:00:00`)
+      if (!isNaN(d.getTime())) {
+        setMonth(d)
+        setSelectedDay(d)
+      }
+    }
+  }, [])
 
   const monthParam = format(month, "yyyy-MM")
 
@@ -167,6 +183,7 @@ export default function BookPACalendarPage() {
       }
       setPa(json.pa)
       setLeaveDates(new Set(json.leaveDates ?? []))
+      setWorkingDays(new Set(json.workingDays ?? []))
       setBookings(json.bookings ?? [])
       setHolidays(json.holidays ?? [])
     } finally {
@@ -204,6 +221,7 @@ export default function BookPACalendarPage() {
   const selectedBookings = bookingsByDate[selectedKey] ?? []
   const selectedHoliday = holidayByDate[selectedKey] ?? null
   const selectedOnLeave = leaveDates.has(selectedKey)
+  const selectedNonWorking = workingDays.size > 0 && !workingDays.has(format(selectedDay, "EEE"))
 
   if (notFound) {
     return (
@@ -317,13 +335,15 @@ export default function BookPACalendarPage() {
               const holiday = holidayByDate[key]
               const onLeave = leaveDates.has(key)
               const beyondHorizon = key > horizonKey
-              // Outside the booking window, on a holiday, or in the past → not bookable
-              const notBookable = past || beyondHorizon || Boolean(holiday)
+              const nonWorkingDay = workingDays.size > 0 && !workingDays.has(format(day, "EEE"))
+              // Outside the booking window, a non-working day, a holiday, or the past → not bookable
+              const notBookable = past || beyondHorizon || nonWorkingDay || Boolean(holiday)
               const dayBookings = bookingsByDate[key] ?? []
 
-              // Chips: holiday, leave, then bookings (max 2 shown)
+              // Chips: holiday, non-working, leave, then bookings (max 2 shown)
               const chips: { key: string; label: string; cls: string }[] = []
               if (holiday) chips.push({ key: "hol", label: holiday.name, cls: CHIP.HOLIDAY })
+              else if (nonWorkingDay) chips.push({ key: "off", label: "Non-working day", cls: CHIP.OFF })
               if (onLeave) chips.push({ key: "leave", label: "On leave", cls: CHIP.LEAVE })
               for (const b of dayBookings) {
                 chips.push({
@@ -379,6 +399,9 @@ export default function BookPACalendarPage() {
               <span className="h-2.5 w-2.5 rounded-sm bg-amber-100" /> Holiday
             </span>
             <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-sm bg-slate-200" /> Non-working
+            </span>
+            <span className="flex items-center gap-1">
               <span className="h-2.5 w-2.5 rounded-sm bg-red-100" /> On leave
             </span>
             <span className="flex items-center gap-1">
@@ -394,6 +417,7 @@ export default function BookPACalendarPage() {
           dayBookings={selectedBookings}
           holiday={selectedHoliday}
           onLeave={selectedOnLeave}
+          nonWorkingDay={selectedNonWorking}
           beyondHorizon={selectedKey > horizonKey}
           onBooked={loadMonth}
         />
@@ -412,6 +436,7 @@ function DayPanel({
   dayBookings,
   holiday,
   onLeave,
+  nonWorkingDay,
   beyondHorizon,
   onBooked,
 }: {
@@ -420,6 +445,7 @@ function DayPanel({
   dayBookings: MonthBooking[]
   holiday: MonthHoliday | null
   onLeave: boolean
+  nonWorkingDay: boolean
   beyondHorizon: boolean
   onBooked: () => void
 }) {
@@ -470,10 +496,10 @@ function DayPanel({
   }, [])
 
   const bookingDisabled = data ? !data.bookingWindow.enabled : false
-  // Blocked by: approved leave, a past date, a department holiday, or being
-  // outside the rolling booking window.
+  // Blocked by: approved leave, a past date, a department holiday, a non-working
+  // day, or being outside the rolling booking window.
   const dayBlocked =
-    (data?.dayUnavailable ?? onLeave) || isPast || beyondHorizon || Boolean(holiday)
+    (data?.dayUnavailable ?? onLeave) || isPast || beyondHorizon || nonWorkingDay || Boolean(holiday)
 
   const slotState = useCallback(
     (slot: Slot): "available" | "booked" | "past" => {
@@ -564,11 +590,16 @@ function DayPanel({
       </div>
 
       {/* Day notices */}
-      {(holiday || onLeave || isPast || beyondHorizon) && (
+      {(holiday || onLeave || isPast || beyondHorizon || nonWorkingDay) && (
         <div className="mt-4 space-y-2">
           {holiday && (
             <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
               Department holiday · {holiday.name} — bookings aren&apos;t allowed.
+            </div>
+          )}
+          {nonWorkingDay && !holiday && (
+            <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
+              Non-working day for this department — bookings aren&apos;t allowed.
             </div>
           )}
           {onLeave && (
@@ -647,11 +678,13 @@ function DayPanel({
               ? "PA is unavailable on this day."
               : holiday
                 ? "Department holiday — bookings aren't allowed."
-                : isPast
-                  ? "You can't book a past date."
-                  : beyondHorizon
-                    ? `Bookings open up to ${BOOKING_HORIZON_DAYS} days ahead.`
-                    : "Unavailable."}
+                : nonWorkingDay
+                  ? "Non-working day — bookings aren't allowed."
+                  : isPast
+                    ? "You can't book a past date."
+                    : beyondHorizon
+                      ? `Bookings open up to ${BOOKING_HORIZON_DAYS} days ahead.`
+                      : "Unavailable."}
           </div>
         ) : slots.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-400">No bookable hours in the department window.</p>

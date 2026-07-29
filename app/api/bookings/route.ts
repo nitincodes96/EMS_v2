@@ -52,6 +52,7 @@ export async function GET(request: Request) {
   const bucket = searchParams.get("bucket")
   const pageParam = searchParams.get("page")
   const limitParam = searchParams.get("limit")
+  const q = (searchParams.get("q") ?? "").trim()
 
   const scopeWhere: Prisma.BookingWhereInput =
     sessionUser.role === "FACULTY"
@@ -62,8 +63,21 @@ export async function GET(request: Request) {
           ? { departmentId: departmentIdParam }
           : {}
 
+  // Free-text search across the work type, task, and the counterparty (faculty
+  // for a PA, PA for a faculty) so either side can search by the other.
+  const searchWhere: Prisma.BookingWhereInput = q
+    ? {
+        OR: [
+          { workType: { contains: q } },
+          { task: { contains: q } },
+          { faculty: { is: { OR: [{ name: { contains: q } }, { username: { contains: q } }, { email: { contains: q } }] } } },
+          { pa: { is: { OR: [{ name: { contains: q } }, { username: { contains: q } }, { email: { contains: q } }] } } },
+        ],
+      }
+    : {}
+
   const now = new Date()
-  const where: Prisma.BookingWhereInput = { ...scopeWhere, ...bucketWhere(bucket, now) }
+  const where: Prisma.BookingWhereInput = { ...scopeWhere, ...bucketWhere(bucket, now), ...searchWhere }
 
   // Soonest-first makes sense for upcoming work; everything else reads newest-first
   const orderBy: Prisma.BookingOrderByWithRelationInput[] =

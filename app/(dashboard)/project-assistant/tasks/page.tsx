@@ -10,17 +10,20 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  CircleDot,
   Clock3,
   GraduationCap,
-  Hourglass,
+  Info,
   ListTodo,
-  LoaderCircle,
+  Mail,
   RefreshCw,
+  Search,
   Star,
   UserX,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
 import { PageHeader } from "@/components/shared/page-header"
 import { cn } from "@/lib/utils"
@@ -45,7 +48,7 @@ type Booking = {
 }
 
 /** Status shown on a card — derived from the booking status plus the clock. */
-type TaskStatus = "UPCOMING" | "IN_PROGRESS" | "AWAITING" | "COMPLETED" | "ABSENT" | "CANCELLED"
+type TaskStatus = "UPCOMING" | "IN_PROGRESS" | "COMPLETED" | "ABSENT" | "CANCELLED"
 
 type FilterKey = "ALL" | "UPCOMING" | "IN_PROGRESS" | "COMPLETED" | "CLOSED"
 
@@ -69,14 +72,7 @@ const STATUS_CONFIG: Record<
     badge: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200/60",
     accent: "border-l-indigo-500",
     glow: "group-hover:shadow-indigo-200/50",
-    icon: <LoaderCircle className="h-3 w-3 animate-spin" />,
-  },
-  AWAITING: {
-    label: "Awaiting confirmation",
-    badge: "bg-amber-50 text-amber-700 ring-1 ring-amber-200/60",
-    accent: "border-l-amber-400",
-    glow: "group-hover:shadow-amber-200/50",
-    icon: <Hourglass className="h-3 w-3" />,
+    icon: <CircleDot className="h-3 w-3" />,
   },
   COMPLETED: {
     label: "Completed",
@@ -103,11 +99,10 @@ const STATUS_CONFIG: Record<
 
 const STATUS_RANK: Record<TaskStatus, number> = {
   IN_PROGRESS: 0,
-  AWAITING: 1,
-  UPCOMING: 2,
-  COMPLETED: 3,
-  ABSENT: 4,
-  CANCELLED: 5,
+  UPCOMING: 1,
+  COMPLETED: 2,
+  ABSENT: 3,
+  CANCELLED: 4,
 }
 
 const FILTERS: { key: FilterKey; label: string }[] = [
@@ -129,11 +124,11 @@ function deriveStatus(booking: Booking, now: Date): TaskStatus {
   if (booking.status === "ABSENT") return "ABSENT"
   if (booking.status === "CANCELLED") return "CANCELLED"
 
+  // A booking the faculty hasn't closed out yet stays "In Progress" once it
+  // has started, whether it's running now or its slot has already passed.
   const start = new Date(booking.startTime)
-  const end = new Date(booking.endTime)
   if (now < start) return "UPCOMING"
-  if (now <= end) return "IN_PROGRESS"
-  return "AWAITING"
+  return "IN_PROGRESS"
 }
 
 function relativeDay(date: string) {
@@ -151,9 +146,20 @@ export default function PATasksPage() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<FilterKey>("ALL")
+  const [search, setSearch] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [page, setPage] = useState(1)
   const [pagination, setPagination] = useState({ page: 1, total: 0, totalPages: 1 })
   const [stats, setStats] = useState({ upcoming: 0, inProgress: 0, completed: 0 })
+
+  // Debounce typing so we don't fetch on every keystroke; reset to page 1 on change
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search.trim())
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [search])
 
   // Only the current page is fetched, so a long history stays fast to load
   const load = useCallback(async () => {
@@ -161,6 +167,7 @@ export default function PATasksPage() {
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
       if (filter !== "ALL") params.set("bucket", filter)
+      if (debouncedSearch) params.set("q", debouncedSearch)
 
       const res = await fetch(`/api/bookings?${params}`)
       const data = await res.json()
@@ -174,7 +181,7 @@ export default function PATasksPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, filter])
+  }, [page, filter, debouncedSearch])
 
   useEffect(() => {
     void load()
@@ -218,7 +225,7 @@ export default function PATasksPage() {
           value={stats.upcoming}
         />
         <StatCard
-          icon={<LoaderCircle className="h-5 w-5" />}
+          icon={<CircleDot className="h-5 w-5" />}
           accent="bg-indigo-50 text-indigo-600 ring-indigo-100"
           label="In Progress"
           value={stats.inProgress}
@@ -232,10 +239,21 @@ export default function PATasksPage() {
       </div>
 
       {/* Feed & Filters */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4">
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">Task Overview</h2>
 
-        <div className="inline-flex flex-wrap rounded-xl bg-slate-100/80 p-1 shadow-sm ring-1 ring-slate-200/50">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative min-w-55 flex-1 lg:max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by faculty, work type or task…"
+              className="rounded-lg pl-9"
+            />
+          </div>
+
+          <div className="inline-flex flex-wrap rounded-xl bg-slate-100/80 p-1 shadow-sm ring-1 ring-slate-200/50">
           {FILTERS.map((f) => (
             <button
               key={f.key}
@@ -250,6 +268,7 @@ export default function PATasksPage() {
               {f.label}
             </button>
           ))}
+          </div>
         </div>
       </div>
 
@@ -262,9 +281,11 @@ export default function PATasksPage() {
           </div>
           <h3 className="mt-5 text-base font-semibold text-slate-900">No tasks found</h3>
           <p className="mt-2 max-w-sm text-sm text-slate-500">
-            {filter === "ALL"
-              ? "No faculty has booked you yet. Punch in to become available for bookings."
-              : "Nothing in this view — try a different filter."}
+            {debouncedSearch
+              ? "No tasks match your search — try a different term."
+              : filter === "ALL"
+                ? "No faculty has booked you yet. Punch in to become available for bookings."
+                : "Nothing in this view — try a different filter."}
           </p>
         </div>
       ) : (
@@ -326,6 +347,8 @@ export default function PATasksPage() {
 function TaskCard({ booking, status }: { booking: Booking; status: TaskStatus }) {
   const config = STATUS_CONFIG[status]
   const facultyName = booking.faculty.name || booking.faculty.username
+  // Only an open booking can still be cancelled or rescheduled — by the faculty.
+  const isActive = booking.status === "BOOKED"
 
   return (
     <article
@@ -395,11 +418,33 @@ function TaskCard({ booking, status }: { booking: Booking; status: TaskStatus })
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 border-t border-slate-200/60 pt-2 text-xs font-medium text-slate-500">
+        <a
+          href={`mailto:${booking.faculty.email}`}
+          className="flex items-center gap-1.5 border-t border-slate-200/60 pt-2 text-xs font-medium text-slate-500 transition-colors hover:text-indigo-600"
+        >
+          <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <span className="truncate">{booking.faculty.email}</span>
+        </a>
+
+        <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
           <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
           <span className="truncate">{booking.department?.name ?? "—"}</span>
         </div>
       </div>
+
+      {/* Cancel / reschedule is faculty-driven — tell the PA who to contact */}
+      {isActive && (
+        <div className="mt-3 flex items-start gap-2 rounded-xl bg-indigo-50/60 px-3 py-2.5 text-xs leading-relaxed text-indigo-800">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500" />
+          <span>
+            Need to cancel or reschedule? Contact{" "}
+            <a href={`mailto:${booking.faculty.email}`} className="font-semibold underline underline-offset-2">
+              {facultyName}
+            </a>{" "}
+            — only faculty can change a booking.
+          </span>
+        </div>
+      )}
     </article>
   )
 }

@@ -82,6 +82,7 @@ export default function CalendarPage() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [leaves, setLeaves] = useState<Leave[]>([])
   const [holidays, setHolidays] = useState<Holiday[]>([])
+  const [workingDays, setWorkingDays] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -104,6 +105,14 @@ export default function CalendarPage() {
       if (deptRes.ok) {
         const d = await deptRes.json()
         setHolidays(d.department?.holidays ?? [])
+        setWorkingDays(
+          new Set(
+            (d.department?.workingDays ?? "Mon,Tue,Wed,Thu,Fri")
+              .split(",")
+              .map((x: string) => x.trim())
+              .filter(Boolean)
+          )
+        )
       }
     } finally {
       setLoading(false)
@@ -248,6 +257,7 @@ export default function CalendarPage() {
             {calendarDays.days.map((day) => {
               const entries = entriesByDay[dayKey(day)] ?? []
               const selected = isSameDay(day, selectedDay)
+              const nonWorkingDay = workingDays.size > 0 && !workingDays.has(format(day, "EEE"))
               const visible = entries.slice(0, 2)
               const overflow = entries.length - visible.length
 
@@ -257,7 +267,8 @@ export default function CalendarPage() {
                   onClick={() => setSelectedDay(day)}
                   className={cn(
                     "min-h-24 cursor-pointer border-b border-r border-slate-100 p-1.5 text-left align-top transition-colors last:border-r-0 hover:bg-indigo-50/40",
-                    selected && "bg-indigo-50 ring-2 ring-inset ring-indigo-500"
+                    selected && "bg-indigo-50 ring-2 ring-inset ring-indigo-500",
+                    nonWorkingDay && !selected && "bg-slate-50/60"
                   )}
                 >
                   <span
@@ -265,13 +276,18 @@ export default function CalendarPage() {
                       "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
                       isToday(day) && !selected && "bg-indigo-600 text-white",
                       selected && !isToday(day) && "font-semibold text-indigo-700",
-                      !isToday(day) && !selected && "text-slate-600"
+                      !isToday(day) && !selected && (nonWorkingDay ? "text-slate-300" : "text-slate-600")
                     )}
                   >
                     {format(day, "d")}
                   </span>
 
                   <div className="mt-1 space-y-1">
+                    {nonWorkingDay && entries.length === 0 && (
+                      <div className="truncate rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
+                        Non-working
+                      </div>
+                    )}
                     {visible.map((entry) => (
                       <div
                         key={entry.id}

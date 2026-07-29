@@ -49,7 +49,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
       isAvailable: true,
       availabilitySince: true,
       departmentId: true,
-      department: { select: { id: true, name: true } },
+      department: { select: { id: true, name: true, workingDays: true } },
     },
   })
 
@@ -136,6 +136,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
       },
     },
     month: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
+    // Department working days as weekday abbreviations, e.g. ["Mon","Tue",...].
+    // Non-working days aren't bookable.
+    workingDays: (pa.department?.workingDays ?? "Mon,Tue,Wed,Thu,Fri")
+      .split(",")
+      .map((d) => d.trim())
+      .filter(Boolean),
     leaveDates: Array.from(leaveDateSet).sort(),
     bookings: bookings.map((b) => ({
       id: b.id,

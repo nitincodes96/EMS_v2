@@ -65,9 +65,11 @@ export async function GET(request: Request) {
   })
 
   return NextResponse.json({
+    // Slots follow the department's configured working hours (shift times), the
+    // only window an admin actually edits. bookingEnabled still gates booking.
     bookingWindow: {
-      start: pa.department.bookingStartTime,
-      end: pa.department.bookingEndTime,
+      start: pa.department.shiftStartTime,
+      end: pa.department.shiftEndTime,
       enabled: pa.department.bookingEnabled,
     },
     dayUnavailable: Boolean(onLeave),
