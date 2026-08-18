@@ -8,7 +8,7 @@ import { checkLeaveDecisionAccess, leaveDateLabel, leaveDays } from "@/lib/leave
 // PATCH: approve or reject a leave request.
 //
 // Who may decide is owned by lib/leave-routing (FR-6.2 / FR-6.3):
-//   - Project Assistant leave → Moderator only.
+//   - Project Assistant leave → Moderator or Admin.
 //   - Faculty leave           → Admin only.
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser()
@@ -21,7 +21,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const leave = await prisma.leave.findUnique({
     where: { id },
     include: {
-      user: { select: { id: true, name: true, username: true, email: true, role: true } },
+      user: { select: { id: true, name: true, email: true, role: true } },
       department: { select: { name: true } },
     },
   })
@@ -84,7 +84,7 @@ async function notifyRequester({
     startDate: Date
     endDate: Date
     reason: string | null
-    user: { id: string; name: string | null; username: string; email: string | null }
+    user: { id: string; name: string | null; email: string | null }
     department: { name: string }
   }
   status: "APPROVED" | "REJECTED"
@@ -94,7 +94,7 @@ async function notifyRequester({
   const [approver, brandName] = await Promise.all([
     prisma.user.findUnique({
       where: { id: approverId },
-      select: { name: true, username: true, email: true },
+      select: { name: true, email: true },
     }),
     mailBrandName(),
   ])

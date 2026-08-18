@@ -25,6 +25,7 @@ import {
   Circle,
   Phone,
   Star,
+  XCircle,
 } from "lucide-react"
 import { toast } from "react-hot-toast"
 
@@ -32,12 +33,15 @@ import { Button } from "@/components/ui/button"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
 import { WORK_TYPES } from "@/lib/work-types"
 import {
-  buildHourlySlots,
+  buildSlots,
   bookingWindowKeys,
-  BOOKING_HORIZON_DAYS,
+  DEFAULT_BOOKING_HORIZON_DAYS,
+  DEFAULT_SLOT_MINUTES,
+  formatDuration,
   minutesToHHMM,
   minutesToLabel,
   parseHHMM,
+  slotRangeLabel,
   type Slot,
 } from "@/lib/booking-slots"
 import { cn } from "@/lib/utils"
@@ -45,7 +49,6 @@ import { cn } from "@/lib/utils"
 type PADetail = {
   id: string
   name: string | null
-  username: string
   email: string
   phoneNumber: string | null
   photoUrl: string | null
@@ -62,7 +65,7 @@ type MonthBooking = {
   end: string
   workType: string | null
   task: string
-  status: "BOOKED" | "COMPLETED" | "ABSENT" | "CANCELLED"
+  status: "BOOKED" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
   bookedBy: string
   canViewDetails: boolean
 }
@@ -72,13 +75,17 @@ type MonthHoliday = { id: string; date: string; name: string; type: string }
 type MonthResponse = {
   pa: PADetail
   workingDays: string[]
+  bookingHorizonDays: number
   leaveDates: string[]
   bookings: MonthBooking[]
   holidays: MonthHoliday[]
 }
 
 type SlotsResponse = {
+  bookingLimit: { limit: number; active: number; reached: boolean }
   bookingWindow: { start: string; end: string; enabled: boolean }
+  slotDurationMinutes: number
+  lunch: { start: string | null; end: string | null }
   dayUnavailable: boolean
   dayUnavailableReason: string | null
   booked: { id: string; start: string; end: string; status: string }[]
@@ -89,6 +96,7 @@ const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
 const CHIP = {
   BOOKED: "bg-indigo-50 text-indigo-700",
   COMPLETED: "bg-emerald-50 text-emerald-700",
+  INCOMPLETE: "bg-amber-50 text-amber-700",
   LEAVE: "bg-red-50 text-red-700",
   HOLIDAY: "bg-amber-50 text-amber-700",
   OFF: "bg-slate-100 text-slate-500",
@@ -150,6 +158,7 @@ export default function BookPACalendarPage() {
   const [month, setMonth] = useState(() => new Date())
   const [leaveDates, setLeaveDates] = useState<Set<string>>(new Set())
   const [workingDays, setWorkingDays] = useState<Set<string>>(new Set())
+  const [bookingHorizonDays, setBookingHorizonDays] = useState(DEFAULT_BOOKING_HORIZON_DAYS)
   const [bookings, setBookings] = useState<MonthBooking[]>([])
   const [holidays, setHolidays] = useState<MonthHoliday[]>([])
   const [loadingMonth, setLoadingMonth] = useState(true)
@@ -184,6 +193,7 @@ export default function BookPACalendarPage() {
       setPa(json.pa)
       setLeaveDates(new Set(json.leaveDates ?? []))
       setWorkingDays(new Set(json.workingDays ?? []))
+      setBookingHorizonDays(json.bookingHorizonDays ?? DEFAULT_BOOKING_HORIZON_DAYS)
       setBookings(json.bookings ?? [])
       setHolidays(json.holidays ?? [])
     } finally {
@@ -196,8 +206,8 @@ export default function BookPACalendarPage() {
   }, [loadMonth])
 
   const today = startOfToday()
-  // Bookings are limited to today .. today + BOOKING_HORIZON_DAYS
-  const { horizonKey } = useMemo(() => bookingWindowKeys(), [])
+  // Bookings are limited to today .. today + the department's booking window
+  const { horizonKey } = useMemo(() => bookingWindowKeys(new Date(), bookingHorizonDays), [bookingHorizonDays])
 
   const calendar = useMemo(() => {
     const start = startOfMonth(month)
@@ -248,14 +258,14 @@ export default function BookPACalendarPage() {
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <EntityAvatar
-              name={pa?.name || pa?.username || "PA"}
-              fallbackText={pa?.name || pa?.username || "PA"}
+              name={pa?.name || "PA"}
+              fallbackText={pa?.email || "PA"}
               imageUrl={pa?.photoUrl ?? null}
               className="h-12 w-12"
             />
             <div className="min-w-0">
               <h1 className="truncate text-xl font-semibold tracking-tight text-slate-900">
-                {pa?.name || pa?.username || "Loading…"}
+                {pa?.name || pa?.email || "Loading…"}
               </h1>
               <p className="truncate text-sm text-slate-500">
                 {pa?.department?.name ? `${pa.department.name} · ` : ""}
@@ -349,7 +359,7 @@ export default function BookPACalendarPage() {
                 chips.push({
                   key: b.id,
                   label: `${minutesToLabel(parseHHMM(b.start))}–${minutesToLabel(parseHHMM(b.end))} · ${b.workType ?? "Task"}`,
-                  cls: b.status === "COMPLETED" ? CHIP.COMPLETED : CHIP.BOOKED,
+                  cls: b.status === "COMPLETED" ? CHIP.COMPLETED : b.status === "INCOMPLETE" ? CHIP.INCOMPLETE : CHIP.BOOKED,
                 })
               }
               const visible = chips.slice(0, 2)
@@ -393,7 +403,7 @@ export default function BookPACalendarPage() {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 px-3 py-2.5 text-[10px] text-slate-400">
             <span className="font-medium text-slate-500">
               Bookable: today – {format(new Date(`${horizonKey}T00:00:00`), "MMM d")} (
-              {BOOKING_HORIZON_DAYS} days)
+              {bookingHorizonDays} days)
             </span>
             <span className="flex items-center gap-1">
               <span className="h-2.5 w-2.5 rounded-sm bg-amber-100" /> Holiday
@@ -419,6 +429,7 @@ export default function BookPACalendarPage() {
           onLeave={selectedOnLeave}
           nonWorkingDay={selectedNonWorking}
           beyondHorizon={selectedKey > horizonKey}
+          bookingHorizonDays={bookingHorizonDays}
           onBooked={loadMonth}
         />
       </div>
@@ -438,6 +449,7 @@ function DayPanel({
   onLeave,
   nonWorkingDay,
   beyondHorizon,
+  bookingHorizonDays,
   onBooked,
 }: {
   paId: string
@@ -447,6 +459,7 @@ function DayPanel({
   onLeave: boolean
   nonWorkingDay: boolean
   beyondHorizon: boolean
+  bookingHorizonDays: number
   onBooked: () => void
 }) {
   const date = format(day, "yyyy-MM-dd")
@@ -479,8 +492,12 @@ function DayPanel({
     void load()
   }, [load])
 
+  const slotMinutes = data?.slotDurationMinutes ?? DEFAULT_SLOT_MINUTES
   const slots = useMemo<Slot[]>(
-    () => (data ? buildHourlySlots(data.bookingWindow.start, data.bookingWindow.end) : []),
+    () =>
+      data
+        ? buildSlots(data.bookingWindow.start, data.bookingWindow.end, data.lunch, data.slotDurationMinutes)
+        : [],
     [data]
   )
 
@@ -496,6 +513,8 @@ function DayPanel({
   }, [])
 
   const bookingDisabled = data ? !data.bookingWindow.enabled : false
+  // Faculty-level cap on simultaneously open (BOOKED) bookings, set per department.
+  const limitReached = data?.bookingLimit?.reached ?? false
   // Blocked by: approved leave, a past date, a department holiday, a non-working
   // day, or being outside the rolling booking window.
   const dayBlocked =
@@ -511,8 +530,8 @@ function DayPanel({
   )
 
   const isSelectable = useCallback(
-    (i: number) => !bookingDisabled && !dayBlocked && slotState(slots[i]) === "available",
-    [bookingDisabled, dayBlocked, slotState, slots]
+    (i: number) => !bookingDisabled && !limitReached && !dayBlocked && slotState(slots[i]) === "available",
+    [bookingDisabled, limitReached, dayBlocked, slotState, slots]
   )
 
   function range(a: number, b: number): number[] {
@@ -549,9 +568,9 @@ function DayPanel({
   const selEnd = hasSelection ? slots[selected[selected.length - 1]].endMin : null
 
   async function submit() {
+    if (limitReached) return toast.error("You've reached your active booking limit. Close an existing booking first.")
     if (!hasSelection || selStart == null || selEnd == null) return toast.error("Select at least one time slot.")
     if (!workType) return toast.error("Please choose a work type.")
-    if (!description.trim()) return toast.error("Please add a booking description.")
     setSubmitting(true)
     try {
       const res = await fetch("/api/bookings", {
@@ -614,7 +633,7 @@ function DayPanel({
           )}
           {beyondHorizon && !isPast && (
             <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
-              Outside the booking window — you can only book up to {BOOKING_HORIZON_DAYS} days ahead.
+              Outside the booking window — you can only book up to {bookingHorizonDays} days ahead.
             </div>
           )}
         </div>
@@ -641,6 +660,8 @@ function DayPanel({
                   </div>
                   {b.status === "COMPLETED" ? (
                     <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                  ) : b.status === "INCOMPLETE" ? (
+                    <XCircle className="h-4 w-4 shrink-0 text-amber-500" />
                   ) : (
                     <Circle className="h-4 w-4 shrink-0 text-slate-300" />
                   )}
@@ -664,13 +685,38 @@ function DayPanel({
 
       {/* Booking form */}
       <div className="mt-5 border-t border-slate-100 pt-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">New booking</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">New booking</p>
+          {data?.bookingLimit && data.bookingLimit.limit > 0 && (
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                limitReached ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-500"
+              )}
+            >
+              {data.bookingLimit.active}/{data.bookingLimit.limit} active bookings
+            </span>
+          )}
+        </div>
 
         {loading ? (
           <p className="py-6 text-center text-sm text-slate-400">Loading availability…</p>
         ) : bookingDisabled ? (
           <div className="mt-2.5 rounded-xl bg-amber-50 px-3 py-3 text-center text-sm text-amber-700">
             Booking is disabled for this department.
+          </div>
+        ) : limitReached ? (
+          <div className="mt-2.5 space-y-2 rounded-xl bg-red-50 px-3 py-3 text-center text-sm text-red-700">
+            <p>
+              You&apos;ve reached your active booking limit ({data?.bookingLimit.limit}). Complete or cancel an
+              existing booking before creating a new one.
+            </p>
+            <Link
+              href="/faculty/bookings"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 underline underline-offset-2 hover:text-red-800"
+            >
+              Go to My Bookings <ChevronRight className="h-3 w-3" />
+            </Link>
           </div>
         ) : dayBlocked ? (
           <div className="mt-2.5 rounded-xl bg-slate-50 px-3 py-3 text-center text-sm text-slate-500">
@@ -683,13 +729,16 @@ function DayPanel({
                   : isPast
                     ? "You can't book a past date."
                     : beyondHorizon
-                      ? `Bookings open up to ${BOOKING_HORIZON_DAYS} days ahead.`
+                      ? `Bookings open up to ${bookingHorizonDays} days ahead.`
                       : "Unavailable."}
           </div>
         ) : slots.length === 0 ? (
-          <p className="py-6 text-center text-sm text-slate-400">No bookable hours in the department window.</p>
+          <p className="py-6 text-center text-sm text-slate-400">No bookable slots in the department window.</p>
         ) : (
           <div className="mt-2.5">
+            <p className="mb-2 text-[11px] text-slate-400">
+              Each slot is {formatDuration(slotMinutes)} — pick consecutive slots for a longer booking.
+            </p>
             <div className="grid grid-cols-2 gap-2">
               {slots.map((slot, i) => {
                 const state = slotState(slot)
@@ -703,7 +752,7 @@ function DayPanel({
                     onClick={() => toggleSlot(i)}
                     title={state === "booked" ? "Already booked" : state === "past" ? "Time has passed" : undefined}
                     className={cn(
-                      "rounded-lg border px-2 py-2 text-xs font-medium transition-colors",
+                      "whitespace-nowrap rounded-lg border px-2 py-2 text-[11px] font-medium transition-colors",
                       isSel
                         ? "border-indigo-600 bg-indigo-600 text-white"
                         : disabled
@@ -711,16 +760,22 @@ function DayPanel({
                           : "cursor-pointer border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50"
                     )}
                   >
-                    {minutesToLabel(slot.startMin)}
+                    {slotRangeLabel(slot.startMin, slot.endMin)}
                   </button>
                 )
               })}
             </div>
 
+            {data?.lunch.start && data?.lunch.end && (
+              <p className="mt-2 text-[11px] text-slate-400">
+                Lunch break {minutesToLabel(parseHHMM(data.lunch.start))} –{" "}
+                {minutesToLabel(parseHHMM(data.lunch.end))} is not bookable.
+              </p>
+            )}
+
             {hasSelection && selStart != null && selEnd != null && (
               <p className="mt-3 text-xs font-medium text-indigo-600">
-                {minutesToLabel(selStart)} – {minutesToLabel(selEnd)} ({selected.length} hr
-                {selected.length > 1 ? "s" : ""})
+                {minutesToLabel(selStart)} – {minutesToLabel(selEnd)} ({formatDuration(selEnd - selStart)})
               </p>
             )}
 
@@ -744,7 +799,9 @@ function DayPanel({
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-600">Description</label>
+                <label className="text-xs font-medium text-slate-600">
+                  Description <span className="text-slate-400">(optional)</span>
+                </label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}

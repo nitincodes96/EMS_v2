@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { format } from "date-fns"
 import prisma from "@/lib/prisma"
 import { getSessionUser, hasRole } from "@/lib/api-auth"
+import { countActiveFacultyBookings } from "@/lib/booking-rules"
 
 // GET: per-PA, per-day booking availability so the calendar can render slots.
 // Query: ?paId=<id>&date=YYYY-MM-DD
@@ -64,13 +65,35 @@ export async function GET(request: Request) {
     select: { id: true, startTime: true, endTime: true, status: true },
   })
 
+  // The requesting faculty's own booking limit in this department (FR: PA
+  // booking limit). Rescheduling doesn't add a new active booking, so the
+  // booking being moved is excluded from the count.
+  const limit = pa.department.facultyBookingLimit
+  const activeCount = excludeBookingId
+    ? await prisma.booking.count({
+        where: { facultyId: sessionUser.id, departmentId: pa.departmentId, status: "BOOKED", id: { not: excludeBookingId } },
+      })
+    : await countActiveFacultyBookings(sessionUser.id, pa.departmentId)
+
   return NextResponse.json({
+    bookingLimit: {
+      limit,
+      active: activeCount,
+      reached: limit > 0 && activeCount >= limit,
+    },
     // Slots follow the department's configured working hours (shift times), the
     // only window an admin actually edits. bookingEnabled still gates booking.
     bookingWindow: {
       start: pa.department.shiftStartTime,
       end: pa.department.shiftEndTime,
       enabled: pa.department.bookingEnabled,
+    },
+    // Length of one slot in the grid, set per department.
+    slotDurationMinutes: pa.department.slotDurationMinutes,
+    // Optional lunch break — the client drops slots overlapping this window
+    lunch: {
+      start: pa.department.lunchStartTime,
+      end: pa.department.lunchEndTime,
     },
     dayUnavailable: Boolean(onLeave),
     dayUnavailableReason: onLeave ? "PA is on approved leave this day" : null,

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
 import {
     Dialog,
     DialogContent,
@@ -44,6 +45,13 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { parseHolidayCsv, type HolidayCsvRow } from "@/lib/csv-holidays"
+import {
+    DEFAULT_BOOKING_CHANGE_CUTOFF_MINUTES,
+    DEFAULT_BOOKING_HORIZON_DAYS,
+    DEFAULT_SLOT_MINUTES,
+    SLOT_DURATION_OPTIONS,
+    formatDuration,
+} from "@/lib/booking-slots"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,7 +74,14 @@ interface Department {
     workingDays: string
     shiftStartTime: string
     shiftEndTime: string
+    lunchStartTime: string | null
+    lunchEndTime: string | null
     lateGraceMinutes: number
+    facultyBookingLimit: number
+    slotDurationMinutes: number
+    bookingHorizonDays: number
+    bookingChangeCutoffMinutes: number
+    geofenceEnabled: boolean
     locations: OrgLocation[]
     createdAt: string
     adminCount: number
@@ -87,6 +102,12 @@ const GRACE_OPTIONS = [
     { label: "30 min", value: 30 },
 ]
 
+// Base UI's <SelectValue /> renders the raw value unless Root gets an items
+// map, so supply value -> label for the slot-duration dropdowns.
+const SLOT_DURATION_ITEMS: Record<string, string> = Object.fromEntries(
+    SLOT_DURATION_OPTIONS.map((m) => [String(m), formatDuration(m)])
+)
+
 const STEPS = ["Basic Info", "Work Schedule", "Geo-fence", "Holiday Calendar", "Review"]
 
 interface DraftLocation {
@@ -102,7 +123,14 @@ const defaultFormData = {
     workingDays: ["Mon", "Tue", "Wed", "Thu", "Fri"] as string[],
     shiftStartTime: "09:00",
     shiftEndTime: "18:00",
+    lunchStartTime: "",
+    lunchEndTime: "",
     lateGraceMinutes: 5,
+    facultyBookingLimit: 3,
+    slotDurationMinutes: 30,
+    bookingHorizonDays: 7,
+    bookingChangeCutoffMinutes: 60,
+    geofenceEnabled: true,
     locations: [] as DraftLocation[],
     holidays: [] as HolidayCsvRow[],
 }
@@ -224,9 +252,13 @@ function ReviewRow({
 function LocationsEditor({
     locations,
     onChange,
+    geofenceEnabled,
+    onGeofenceEnabledChange,
 }: {
     locations: DraftLocation[]
     onChange: (locations: DraftLocation[]) => void
+    geofenceEnabled: boolean
+    onGeofenceEnabledChange: (enabled: boolean) => void
 }) {
     const addLocation = () => {
         onChange([...locations, { name: "", latitude: "", longitude: "", radiusMeters: 100 }])
@@ -240,10 +272,35 @@ function LocationsEditor({
 
     return (
         <div className="space-y-3">
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
+                <div>
+                    <Label className="text-sm">Enforce geo-fencing</Label>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                        When on, staff must share their location and be inside one of the pinned locations to
+                        punch attendance. When off, they can punch from anywhere without a location prompt.
+                    </p>
+                </div>
+                <Switch
+                    checked={geofenceEnabled}
+                    onCheckedChange={(checked: boolean) => onGeofenceEnabledChange(checked)}
+                    className="mt-0.5 shrink-0 data-checked:bg-indigo-600"
+                />
+            </div>
+
+            {geofenceEnabled && locations.length === 0 && (
+                <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <p className="text-xs leading-relaxed text-amber-700">
+                        Geo-fencing is on but no locations are pinned yet — staff will still be asked for their
+                        location, but it won&apos;t be restricted until you add at least one below.
+                    </p>
+                </div>
+            )}
+
             <div className="flex items-start gap-2.5 rounded-lg border border-indigo-100 bg-indigo-50 p-3">
                 <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
                 <p className="text-xs leading-relaxed text-indigo-700">
-                    Add one or more office locations. Employees can check in and out from any of them. Leave empty to skip geo-fencing.
+                    Add one or more office locations. Employees can check in and out from any of them.
                 </p>
             </div>
 
@@ -469,7 +526,14 @@ function CreateOrgWizard({
             payload.append("workingDays", formData.workingDays.join(","))
             payload.append("shiftStartTime", formData.shiftStartTime)
             payload.append("shiftEndTime", formData.shiftEndTime)
+            payload.append("lunchStartTime", formData.lunchStartTime)
+            payload.append("lunchEndTime", formData.lunchEndTime)
             payload.append("lateGraceMinutes", String(formData.lateGraceMinutes))
+            payload.append("facultyBookingLimit", String(formData.facultyBookingLimit))
+            payload.append("slotDurationMinutes", String(formData.slotDurationMinutes))
+            payload.append("bookingHorizonDays", String(formData.bookingHorizonDays))
+            payload.append("bookingChangeCutoffMinutes", String(formData.bookingChangeCutoffMinutes))
+            payload.append("geofenceEnabled", String(formData.geofenceEnabled))
             payload.append(
                 "locations",
                 JSON.stringify(
@@ -622,6 +686,39 @@ function CreateOrgWizard({
                         </div>
 
                         <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                                <Label>Lunch break <span className="font-normal text-slate-400">(optional)</span></Label>
+                                {(formData.lunchStartTime || formData.lunchEndTime) && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            set("lunchStartTime", "")
+                                            set("lunchEndTime", "")
+                                        }}
+                                        className="cursor-pointer text-xs font-medium text-slate-500 hover:text-red-600"
+                                    >
+                                        Clear
+                                    </button>
+                                )}
+                            </div>
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                <Input
+                                    aria-label="Lunch start"
+                                    type="time"
+                                    value={formData.lunchStartTime}
+                                    onChange={(e) => set("lunchStartTime", e.target.value)}
+                                />
+                                <Input
+                                    aria-label="Lunch end"
+                                    type="time"
+                                    value={formData.lunchEndTime}
+                                    onChange={(e) => set("lunchEndTime", e.target.value)}
+                                />
+                            </div>
+                            <p className="text-xs text-slate-400">Slots during this break won&apos;t be bookable.</p>
+                        </div>
+
+                        <div className="space-y-1.5">
                             <Label htmlFor="grace">Late grace window</Label>
                             <Select
                                 value={String(formData.lateGraceMinutes)}
@@ -642,6 +739,89 @@ function CreateOrgWizard({
                                 Check-ins within this window after shift start won&apos;t be marked late.
                             </p>
                         </div>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="booking-limit">Faculty PA booking limit</Label>
+                            <Input
+                                id="booking-limit"
+                                type="number"
+                                min="0"
+                                value={formData.facultyBookingLimit}
+                                onChange={(e) => set("facultyBookingLimit", Math.max(0, parseInt(e.target.value) || 0))}
+                                className="w-32"
+                            />
+                            <p className="text-xs text-slate-400">
+                                Max PA bookings a faculty member can have active at once. 0 = unlimited.
+                            </p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="slot-duration">Booking slot duration</Label>
+                            <Select
+                                items={SLOT_DURATION_ITEMS}
+                                value={String(formData.slotDurationMinutes ?? DEFAULT_SLOT_MINUTES)}
+                                onValueChange={(v) => set("slotDurationMinutes", parseInt(String(v ?? DEFAULT_SLOT_MINUTES)))}
+                            >
+                                <SelectTrigger id="slot-duration" className="w-full">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {SLOT_DURATION_OPTIONS.map((mins) => (
+                                        <SelectItem key={mins} value={String(mins)}>
+                                            {formatDuration(mins)}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-slate-400">
+                                Length of one bookable slot on the PA booking calendar. Faculty can pick
+                                consecutive slots for a longer booking.
+                            </p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="booking-horizon">Booking window</Label>
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    id="booking-horizon"
+                                    type="number"
+                                    min="1"
+                                    max="90"
+                                    value={formData.bookingHorizonDays}
+                                    onChange={(e) =>
+                                        set("bookingHorizonDays", Math.min(90, Math.max(1, parseInt(e.target.value) || 1)))
+                                    }
+                                    className="w-32"
+                                />
+                                <span className="text-sm text-slate-500">days ahead</span>
+                            </div>
+                            <p className="text-xs text-slate-400">
+                                How far in advance faculty can book a PA — today counts as day 1.
+                            </p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="change-cutoff">Cancellation / reschedule cutoff</Label>
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    id="change-cutoff"
+                                    type="number"
+                                    min="0"
+                                    max="2880"
+                                    value={formData.bookingChangeCutoffMinutes}
+                                    onChange={(e) =>
+                                        set("bookingChangeCutoffMinutes", Math.min(2880, Math.max(0, parseInt(e.target.value) || 0)))
+                                    }
+                                    className="w-32"
+                                />
+                                <span className="text-sm text-slate-500">minutes before start</span>
+                            </div>
+                            <p className="text-xs text-slate-400">
+                                {formData.bookingChangeCutoffMinutes === 0
+                                    ? "A booking can be cancelled or rescheduled right up until it starts."
+                                    : `A booking can only be cancelled or rescheduled until ${formatDuration(formData.bookingChangeCutoffMinutes)} before its start time.`}
+                            </p>
+                        </div>
                     </div>
                 )}
 
@@ -649,6 +829,8 @@ function CreateOrgWizard({
                     <LocationsEditor
                         locations={formData.locations}
                         onChange={(locations) => set("locations", locations)}
+                        geofenceEnabled={formData.geofenceEnabled}
+                        onGeofenceEnabledChange={(enabled) => set("geofenceEnabled", enabled)}
                     />
                 )}
 
@@ -680,12 +862,36 @@ function CreateOrgWizard({
                                 value={`${formData.shiftStartTime} – ${formData.shiftEndTime}`}
                             />
                             <ReviewRow label="Grace window" value={`${formData.lateGraceMinutes} min`} />
+                            <ReviewRow
+                                label="Booking limit"
+                                value={formData.facultyBookingLimit > 0 ? `${formData.facultyBookingLimit} active max` : "Unlimited"}
+                            />
+                            <ReviewRow
+                                label="Slot duration"
+                                value={formatDuration(formData.slotDurationMinutes)}
+                            />
+                            <ReviewRow
+                                label="Booking window"
+                                value={`${formData.bookingHorizonDays} day${formData.bookingHorizonDays === 1 ? "" : "s"} ahead`}
+                            />
+                            <ReviewRow
+                                label="Change cutoff"
+                                value={
+                                    formData.bookingChangeCutoffMinutes === 0
+                                        ? "Until start time"
+                                        : `${formatDuration(formData.bookingChangeCutoffMinutes)} before start`
+                                }
+                            />
                         </div>
 
                         <div className="space-y-2 pt-1">
                             <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                                 Geo-fence
                             </p>
+                            <ReviewRow
+                                label="Enforcement"
+                                value={formData.geofenceEnabled ? "On — location required" : "Off — no location needed"}
+                            />
                             <ReviewRow
                                 icon={<MapPin className="h-4 w-4" />}
                                 label="Locations"
@@ -773,7 +979,14 @@ function EditOrgDialog({
         workingDays: org.workingDays ? org.workingDays.split(",") : ["Mon", "Tue", "Wed", "Thu", "Fri"],
         shiftStartTime: org.shiftStartTime,
         shiftEndTime: org.shiftEndTime,
+        lunchStartTime: org.lunchStartTime || "",
+        lunchEndTime: org.lunchEndTime || "",
         lateGraceMinutes: org.lateGraceMinutes,
+        facultyBookingLimit: org.facultyBookingLimit,
+        slotDurationMinutes: org.slotDurationMinutes ?? DEFAULT_SLOT_MINUTES,
+        bookingHorizonDays: org.bookingHorizonDays ?? DEFAULT_BOOKING_HORIZON_DAYS,
+        bookingChangeCutoffMinutes: org.bookingChangeCutoffMinutes ?? DEFAULT_BOOKING_CHANGE_CUTOFF_MINUTES,
+        geofenceEnabled: org.geofenceEnabled,
         locations: org.locations.map((l) => ({
             name: l.name,
             latitude: String(l.latitude),
@@ -833,7 +1046,14 @@ function EditOrgDialog({
             payload.append("workingDays", form.workingDays.join(","))
             payload.append("shiftStartTime", form.shiftStartTime)
             payload.append("shiftEndTime", form.shiftEndTime)
+            payload.append("lunchStartTime", form.lunchStartTime)
+            payload.append("lunchEndTime", form.lunchEndTime)
             payload.append("lateGraceMinutes", String(form.lateGraceMinutes))
+            payload.append("facultyBookingLimit", String(form.facultyBookingLimit))
+            payload.append("slotDurationMinutes", String(form.slotDurationMinutes))
+            payload.append("bookingHorizonDays", String(form.bookingHorizonDays))
+            payload.append("bookingChangeCutoffMinutes", String(form.bookingChangeCutoffMinutes))
+            payload.append("geofenceEnabled", String(form.geofenceEnabled))
             payload.append(
                 "locations",
                 JSON.stringify(
@@ -862,8 +1082,8 @@ function EditOrgDialog({
     }
 
     return (
-        <form onSubmit={handleSubmit} className="flex flex-col">
-            <Tabs defaultValue="basic">
+        <form onSubmit={handleSubmit} className="flex max-h-[85vh] flex-col">
+            <Tabs defaultValue="basic" className="min-h-0 flex-1">
                 <div className="px-5 pb-0 pt-3">
                     <TabsList className="grid w-full grid-cols-3">
                         <TabsTrigger value="basic" className="gap-1.5 text-xs">
@@ -877,6 +1097,8 @@ function EditOrgDialog({
                         </TabsTrigger>
                     </TabsList>
                 </div>
+
+                <div className="max-h-[calc(85vh-220px)] overflow-y-auto">
 
                 <TabsContent value="basic" className="mt-0 min-h-56 space-y-4 px-4 py-4 sm:px-5">
                     <div className="space-y-1.5">
@@ -953,6 +1175,38 @@ function EditOrgDialog({
                         </div>
                     </div>
                     <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                            <Label>Lunch break <span className="font-normal text-slate-400">(optional)</span></Label>
+                            {(form.lunchStartTime || form.lunchEndTime) && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        set("lunchStartTime", "")
+                                        set("lunchEndTime", "")
+                                    }}
+                                    className="cursor-pointer text-xs font-medium text-slate-500 hover:text-red-600"
+                                >
+                                    Clear
+                                </button>
+                            )}
+                        </div>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <Input
+                                aria-label="Lunch start"
+                                type="time"
+                                value={form.lunchStartTime}
+                                onChange={(e) => set("lunchStartTime", e.target.value)}
+                            />
+                            <Input
+                                aria-label="Lunch end"
+                                type="time"
+                                value={form.lunchEndTime}
+                                onChange={(e) => set("lunchEndTime", e.target.value)}
+                            />
+                        </div>
+                        <p className="text-xs text-slate-400">Slots during this break won&apos;t be bookable.</p>
+                    </div>
+                    <div className="space-y-1.5">
                         <Label htmlFor="edit-grace">Late grace window</Label>
                         <Select value={String(form.lateGraceMinutes)} onValueChange={(v) => set("lateGraceMinutes", parseInt(v ?? "5"))}>
                             <SelectTrigger id="edit-grace" className="w-full">
@@ -967,15 +1221,96 @@ function EditOrgDialog({
                             </SelectContent>
                         </Select>
                     </div>
+                    <div className="space-y-1.5">
+                        <Label htmlFor="edit-booking-limit">Faculty PA booking limit</Label>
+                        <Input
+                            id="edit-booking-limit"
+                            type="number"
+                            min="0"
+                            value={form.facultyBookingLimit}
+                            onChange={(e) => set("facultyBookingLimit", Math.max(0, parseInt(e.target.value) || 0))}
+                            className="w-32"
+                        />
+                        <p className="text-xs text-slate-400">
+                            Max PA bookings a faculty member can have active at once. 0 = unlimited.
+                        </p>
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label htmlFor="edit-slot-duration">Booking slot duration</Label>
+                        <Select
+                            items={SLOT_DURATION_ITEMS}
+                            value={String(form.slotDurationMinutes ?? DEFAULT_SLOT_MINUTES)}
+                            onValueChange={(v) => set("slotDurationMinutes", parseInt(String(v ?? DEFAULT_SLOT_MINUTES)))}
+                        >
+                            <SelectTrigger id="edit-slot-duration" className="w-full">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {SLOT_DURATION_OPTIONS.map((mins) => (
+                                    <SelectItem key={mins} value={String(mins)}>
+                                        {formatDuration(mins)}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <p className="text-xs text-slate-400">
+                            Length of one bookable slot on the PA booking calendar. Existing bookings keep
+                            their original times.
+                        </p>
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label htmlFor="edit-booking-horizon">Booking window</Label>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                id="edit-booking-horizon"
+                                type="number"
+                                min="1"
+                                max="90"
+                                value={form.bookingHorizonDays}
+                                onChange={(e) =>
+                                    set("bookingHorizonDays", Math.min(90, Math.max(1, parseInt(e.target.value) || 1)))
+                                }
+                                className="w-32"
+                            />
+                            <span className="text-sm text-slate-500">days ahead</span>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                            How far in advance faculty can book a PA — today counts as day 1.
+                        </p>
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label htmlFor="edit-change-cutoff">Cancellation / reschedule cutoff</Label>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                id="edit-change-cutoff"
+                                type="number"
+                                min="0"
+                                max="2880"
+                                value={form.bookingChangeCutoffMinutes}
+                                onChange={(e) =>
+                                    set("bookingChangeCutoffMinutes", Math.min(2880, Math.max(0, parseInt(e.target.value) || 0)))
+                                }
+                                className="w-32"
+                            />
+                            <span className="text-sm text-slate-500">minutes before start</span>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                            {form.bookingChangeCutoffMinutes === 0
+                                ? "A booking can be cancelled or rescheduled right up until it starts."
+                                : `A booking can only be cancelled or rescheduled until ${formatDuration(form.bookingChangeCutoffMinutes)} before its start time.`}
+                        </p>
+                    </div>
                 </TabsContent>
 
                 <TabsContent value="geofence" className="mt-0 min-h-56 px-4 py-4 sm:px-5">
                     <LocationsEditor
                         locations={form.locations}
                         onChange={(locations) => set("locations", locations)}
+                        geofenceEnabled={form.geofenceEnabled}
+                        onGeofenceEnabledChange={(enabled) => set("geofenceEnabled", enabled)}
                     />
                 </TabsContent>
-
+                </div>
             </Tabs>
 
             {error && (
@@ -1188,7 +1523,7 @@ export default function DepartmentsPage() {
                     setEditDialogOpen(open)
                 }}
             >
-                <DialogContent className="w-[95vw] gap-0 overflow-hidden bg-white p-0 sm:max-w-xl">
+                <DialogContent className="w-[95vw] max-h-[90vh] gap-0 overflow-hidden bg-white p-0 sm:max-w-xl">
                     <DialogHeader className="px-5 pb-0 pt-5">
                         <DialogTitle className="text-base font-bold text-slate-900">Edit Department</DialogTitle>
                         <DialogDescription className="sr-only">Edit department settings</DialogDescription>

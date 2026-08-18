@@ -30,7 +30,7 @@ export async function GET(request: Request) {
   const leaves = await prisma.leave.findMany({
     where,
     include: {
-      user: { select: { id: true, name: true, username: true, email: true, role: true, photoUrl: true } },
+      user: { select: { id: true, name: true, email: true, role: true, photoUrl: true } },
       department: { select: { id: true, name: true } },
     },
     orderBy: { createdAt: "desc" },

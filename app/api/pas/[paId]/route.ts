@@ -40,7 +40,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
     select: {
       id: true,
       name: true,
-      username: true,
       email: true,
       phoneNumber: true,
       photoUrl: true,
@@ -49,7 +48,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
       isAvailable: true,
       availabilitySince: true,
       departmentId: true,
-      department: { select: { id: true, name: true, workingDays: true } },
+      department: { select: { id: true, name: true, workingDays: true, bookingHorizonDays: true } },
     },
   })
 
@@ -77,7 +76,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
       where: {
         paId,
         date: { gte: monthStart, lte: monthEnd },
-        status: { in: ["BOOKED", "COMPLETED"] },
+        status: { in: ["BOOKED", "COMPLETED", "INCOMPLETE"] },
       },
       orderBy: { startTime: "asc" },
       select: {
@@ -89,7 +88,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
         task: true,
         status: true,
         facultyId: true,
-        faculty: { select: { name: true, username: true } },
+        faculty: { select: { name: true } },
       },
     }),
     prisma.holiday.findMany({
@@ -123,7 +122,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
     pa: {
       id: pa.id,
       name: pa.name,
-      username: pa.username,
       email: pa.email,
       phoneNumber: pa.phoneNumber,
       photoUrl: pa.photoUrl,
@@ -142,6 +140,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
       .split(",")
       .map((d) => d.trim())
       .filter(Boolean),
+    // How many days ahead this department allows a booking to be made.
+    bookingHorizonDays: pa.department?.bookingHorizonDays ?? 7,
     leaveDates: Array.from(leaveDateSet).sort(),
     bookings: bookings.map((b) => ({
       id: b.id,
@@ -151,7 +151,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
       workType: b.workType,
       task: b.task,
       status: b.status,
-      bookedBy: b.faculty.name || b.faculty.username,
+      bookedBy: b.faculty.name,
       // Only the owning faculty (or an admin) can open the booking's detail page
       canViewDetails: sessionUser.role === "ADMIN" || b.facultyId === sessionUser.id,
     })),

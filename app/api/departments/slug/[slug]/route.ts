@@ -27,23 +27,45 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
   const dayStart = startOfDay(now)
   const dayEnd = endOfDay(now)
 
+  // Never hand the client a raw user row — it carries the password hash, OTP
+  // and the invite/reset tokens. Only these fields are needed by the UI.
+  const USER_SELECT = {
+    id: true,
+    email: true,
+    empCode: true,
+    name: true,
+    photoUrl: true,
+    phoneNumber: true,
+    role: true,
+    isActive: true,
+    status: true,
+    joiningDate: true,
+    createdAt: true,
+  } as const
+
   const [users, holidays, leaves, attendances] = await Promise.all([
-    prisma.user.findMany({ where: { departmentId: org.id }, orderBy: { createdAt: "desc" } }),
+    prisma.user.findMany({
+      where: { departmentId: org.id },
+      select: USER_SELECT,
+      orderBy: { createdAt: "desc" },
+    }),
     prisma.holiday.findMany({ where: { departmentId: org.id }, orderBy: { date: "asc" } }),
     prisma.leave.findMany({
       where: { departmentId: org.id, status: "PENDING" },
-      include: { user: true },
+      include: { user: { select: USER_SELECT } },
       orderBy: { createdAt: "desc" },
     }),
     prisma.attendance.findMany({
       where: { departmentId: org.id, date: { gte: dayStart, lte: dayEnd } },
-      include: { user: true },
+      include: { user: { select: USER_SELECT } },
     }),
   ])
 
   const presentUserIds = new Set(attendances.map((a) => a.userId))
+  // Attendance is punched by Project Assistants only — Faculty and Moderators
+  // never check in, so listing them as "absent" would flag them every day.
   const absentUsers = users.filter(
-    (u) => u.isActive && u.role !== "ADMIN" && !presentUserIds.has(u.id)
+    (u) => u.isActive && u.role === "PROJECT_ASSISTANT" && !presentUserIds.has(u.id)
   )
 
   const stats = {

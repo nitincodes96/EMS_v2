@@ -1,13 +1,26 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { format } from "date-fns"
-import { CalendarPlus, CalendarSearch, Mail, Phone, RefreshCw, Search, UserCheck, X } from "lucide-react"
+import {
+  AlertTriangle,
+  CalendarPlus,
+  CalendarSearch,
+  ChevronRight,
+  Mail,
+  Phone,
+  RefreshCw,
+  Search,
+  UserCheck,
+  X,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
+import { TablePagination } from "@/components/shared/table-pagination"
 import { minutesToLabel } from "@/lib/booking-slots"
 import { cn } from "@/lib/utils"
 
@@ -19,7 +32,6 @@ type Availability = {
 type PA = {
   id: string
   name: string | null
-  username: string
   email: string
   phoneNumber: string | null
   photoUrl: string | null
@@ -53,7 +65,9 @@ const AVAILABILITY_BADGE: Record<Availability["status"], { label: string; cls: s
   "on-leave": { label: "On leave", cls: "bg-red-50 text-red-700", dot: "bg-red-500" },
 }
 
-export default function BookPAPage() {
+const PAGE_SIZE_OPTIONS = [10, 25, 50]
+
+export default function BookPAPage() {  
   const router = useRouter()
   const [pas, setPas] = useState<PA[]>([])
   const [loading, setLoading] = useState(true)
@@ -67,6 +81,8 @@ export default function BookPAPage() {
 
   // Working hours drive the slot dropdown, from the department (not hardcoded)
   const [workingHours, setWorkingHours] = useState({ start: "09:00", end: "18:00" })
+  // Department-set cap on how many bookings this faculty can have open at once
+  const [bookingLimit, setBookingLimit] = useState<{ limit: number; active: number } | null>(null)
 
   useEffect(() => {
     fetch("/api/departments/me")
@@ -75,6 +91,9 @@ export default function BookPAPage() {
         const dept = d?.department
         if (dept?.shiftStartTime && dept?.shiftEndTime) {
           setWorkingHours({ start: dept.shiftStartTime, end: dept.shiftEndTime })
+        }
+        if (dept?.facultyActiveBookingCount != null) {
+          setBookingLimit({ limit: dept.facultyBookingLimit ?? 0, active: dept.facultyActiveBookingCount })
         }
       })
       .catch(() => {})
@@ -123,11 +142,21 @@ export default function BookPAPage() {
       if (!q) return true
       return (
         (pa.name || "").toLowerCase().includes(q) ||
-        pa.username.toLowerCase().includes(q) ||
         pa.email.toLowerCase().includes(q)
       )
     })
   }, [pas, search, filteringByDate, onlyAvailable])
+
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0])
+  // Any change to the visible set should land back on page 1
+  useEffect(() => {
+    setPage(1)
+  }, [search, filteringByDate, onlyAvailable, pas, pageSize])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   const slotLabel = hasSlot ? `${minutesToLabel(toMinutes(startTime))} – ${minutesToLabel(toMinutes(endTime))}` : null
 
@@ -145,6 +174,34 @@ export default function BookPAPage() {
         </Button>
       </div>
 
+      {bookingLimit && bookingLimit.limit > 0 && (
+        <div
+          className={cn(
+            "mb-4 flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm",
+            bookingLimit.active >= bookingLimit.limit
+              ? "border-red-200 bg-red-50 text-red-700"
+              : "border-slate-200 bg-white text-slate-600"
+          )}
+        >
+          {bookingLimit.active >= bookingLimit.limit && <AlertTriangle className="h-4 w-4 shrink-0" />}
+          <span className="flex-1">
+            You have <span className="font-semibold">{bookingLimit.active}</span> of{" "}
+            <span className="font-semibold">{bookingLimit.limit}</span> active bookings.
+            {bookingLimit.active >= bookingLimit.limit
+              ? " Complete or cancel one before booking another."
+              : ""}
+          </span>
+          {bookingLimit.active >= bookingLimit.limit && (
+            <Link
+              href="/faculty/bookings"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
+            >
+              Go to My Bookings <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          )}
+        </div>
+      )}
+
       {/* Availability filter */}
       <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center gap-2">
@@ -161,6 +218,7 @@ export default function BookPAPage() {
         </div>
 
         <div className="flex flex-wrap items-end gap-3">
+          {/* Date Input */}
           <div>
             <label className="text-[11px] font-medium text-slate-500">Date</label>
             <input
@@ -172,42 +230,44 @@ export default function BookPAPage() {
             />
           </div>
 
-          <div>
-            <label className="text-[11px] font-medium text-slate-500">From</label>
-            <select
-              value={startTime}
-              disabled={!filteringByDate}
-              onChange={(e) => {
-                const v = e.target.value
-                setStartTime(v)
-                if (endTime && v >= endTime) setEndTime("")
-              }}
-              className="mt-1 block cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="">Any</option>
-              {HOURS.slice(0, -1).map((m) => (
-                <option key={m} value={toHHMM(m)}>
-                  {minutesToLabel(m)}
-                </option>
-              ))}
-            </select>
-          </div>
+          <div className="flex items-end gap-3">
+            <div>
+              <label className="text-[11px] font-medium text-slate-500">From</label>
+              <select
+                value={startTime}
+                disabled={!filteringByDate}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setStartTime(v)
+                  if (endTime && v >= endTime) setEndTime("")
+                }}
+                className="mt-1 block cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">Any</option>
+                {HOURS.slice(0, -1).map((m) => (
+                  <option key={m} value={toHHMM(m)}>
+                    {minutesToLabel(m)}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <label className="text-[11px] font-medium text-slate-500">To</label>
-            <select
-              value={endTime}
-              disabled={!filteringByDate || !startTime}
-              onChange={(e) => setEndTime(e.target.value)}
-              className="mt-1 block cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="">Any</option>
-              {HOURS.filter((m) => !startTime || m > toMinutes(startTime)).map((m) => (
-                <option key={m} value={toHHMM(m)}>
-                  {minutesToLabel(m)}
-                </option>
-              ))}
-            </select>
+            <div>
+              <label className="text-[11px] font-medium text-slate-500">To</label>
+              <select
+                value={endTime}
+                disabled={!filteringByDate || !startTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="mt-1 block cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">Any</option>
+                {HOURS.filter((m) => !startTime || m > toMinutes(startTime)).map((m) => (
+                  <option key={m} value={toHHMM(m)}>
+                    {minutesToLabel(m)}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <label
@@ -249,7 +309,7 @@ export default function BookPAPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, username or email…"
+            placeholder="Search by name or email…"
             className="rounded-lg pl-9"
           />
         </div>
@@ -266,105 +326,126 @@ export default function BookPAPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((pa) => {
-            const badge = filteringByDate && pa.availability ? AVAILABILITY_BADGE[pa.availability.status] : null
-            return (
-              <div
-                key={pa.id}
-                className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all hover:border-indigo-300 hover:shadow-md"
-              >
-                {/* Identity */}
-                <div className="flex items-start gap-3 p-4">
-                  <div className="relative shrink-0">
-                    <EntityAvatar
-                      name={pa.name || pa.username}
-                      fallbackText={pa.name || pa.username}
-                      imageUrl={pa.photoUrl}
-                      className="h-12 w-12 ring-2 ring-slate-100"
-                    />
-                    <span
-                      className={cn(
-                        "absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white",
-                        pa.isAvailable ? "bg-emerald-500" : "bg-slate-300"
-                      )}
-                      title={pa.isAvailable ? "Available now" : "Not punched in today"}
-                    />
-                  </div>
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-180 text-sm">
+              <thead className="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Project Assistant</th>
+                  <th className="px-4 py-3">Contact</th>
+                  <th className="px-4 py-3">
+                    {filteringByDate ? "Availability for selected day" : "Today's Availability"}
+                  </th>
+                  <th className="px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginated.map((pa) => {
+                  const badge = filteringByDate && pa.availability ? AVAILABILITY_BADGE[pa.availability.status] : null
+                  return (
+                    <tr key={pa.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
+                      {/* Identity */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="relative shrink-0">
+                            <EntityAvatar
+                              name={pa.name}
+                              fallbackText={pa.email}
+                              imageUrl={pa.photoUrl}
+                              className="h-9 w-9 ring-2 ring-slate-100"
+                            />
+                            <span
+                              className={cn(
+                                "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white",
+                                pa.isAvailable ? "bg-emerald-500" : "bg-slate-300"
+                              )}
+                              title={pa.isAvailable ? "Available now" : "Not punched in today"}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">{pa.name || pa.email}</p>
+                          </div>
+                        </div>
+                      </td>
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-semibold text-slate-900">{pa.name || pa.username}</p>
-                      {badge && (
-                        <span
-                          className={cn(
-                            "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
-                            badge.cls
-                          )}
+                      {/* Contact */}
+                      <td className="px-4 py-3">
+                        <a
+                          href={`mailto:${pa.email}`}
+                          className="flex items-center gap-1.5 text-xs text-slate-500 transition-colors hover:text-indigo-600"
                         >
-                          <span className={cn("h-1.5 w-1.5 rounded-full", badge.dot)} />
-                          {badge.label}
-                        </span>
-                      )}
-                    </div>
-                    <p className="truncate text-xs text-slate-400">@{pa.username}</p>
-                    {filteringByDate ? (
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        {pa.availability?.dayBookingCount
-                          ? `${pa.availability.dayBookingCount} booking${pa.availability.dayBookingCount > 1 ? "s" : ""} that day`
-                          : "No bookings that day"}
-                      </p>
-                    ) : pa.isAvailable ? (
-                      <p className="mt-1 text-[11px] font-medium text-emerald-600">
-                        {pa.availabilitySince
-                          ? `Available since ${format(new Date(pa.availabilitySince), "h:mm a")}`
-                          : "Available now"}
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-[11px] text-slate-400">Not punched in today</p>
-                    )}
-                  </div>
-                </div>
+                          <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                          <span className="truncate">{pa.email}</span>
+                        </a>
+                        {pa.phoneNumber ? (
+                          <a
+                            href={`tel:${pa.phoneNumber}`}
+                            className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-600 transition-colors hover:text-indigo-600"
+                          >
+                            <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                            <span className="truncate">{pa.phoneNumber}</span>
+                          </a>
+                        ) : (
+                          <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-300">
+                            <Phone className="h-3.5 w-3.5 shrink-0" /> No phone on file
+                          </p>
+                        )}
+                      </td>
 
-                {/* Contact */}
-                <div className="space-y-1.5 border-t border-slate-100 px-4 py-3">
-                  <a
-                    href={`mailto:${pa.email}`}
-                    className="flex items-center gap-2 text-xs text-slate-500 transition-colors hover:text-indigo-600"
-                  >
-                    <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                    <span className="truncate">{pa.email}</span>
-                  </a>
+                      {/* Availability */}
+                      <td className="whitespace-nowrap px-4 py-3">
+                        {badge && (
+                          <span
+                            className={cn(
+                              "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
+                              badge.cls
+                            )}
+                          >
+                            <span className={cn("h-1.5 w-1.5 rounded-full", badge.dot)} />
+                            {badge.label}
+                          </span>
+                        )}
+                        {filteringByDate ? (
+                          <p className="mt-1 text-[11px] text-slate-400">
+                            {pa.availability?.dayBookingCount
+                              ? `${pa.availability.dayBookingCount} booking${pa.availability.dayBookingCount > 1 ? "s" : ""} that day`
+                              : "No bookings that day"}
+                          </p>
+                        ) : pa.isAvailable ? (
+                          <p className="text-[11px] font-medium text-emerald-600">
+                            {pa.availabilitySince
+                              ? `Available since ${format(new Date(pa.availabilitySince), "h:mm a")}`
+                              : "Available now"}
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-slate-400">Not punched in today</p>
+                        )}
+                      </td>
 
-                  {pa.phoneNumber ? (
-                    <a
-                      href={`tel:${pa.phoneNumber}`}
-                      className="flex items-center gap-2 text-xs font-medium text-slate-600 transition-colors hover:text-indigo-600"
-                    >
-                      <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      <span className="truncate">{pa.phoneNumber}</span>
-                    </a>
-                  ) : (
-                    <p className="flex items-center gap-2 text-xs text-slate-300">
-                      <Phone className="h-3.5 w-3.5 shrink-0" /> No phone on file
-                    </p>
-                  )}
-                </div>
+                      {/* Action */}
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          onClick={() => router.push(`/faculty/book-pa/${pa.id}${date ? `?date=${date}` : ""}`)}
+                          className="cursor-pointer rounded-xl bg-indigo-600 text-white hover:bg-indigo-700"
+                        >
+                          <CalendarPlus className="mr-1.5 h-4 w-4" /> Open calendar
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
 
-                {/* Action */}
-                <div className="mt-auto border-t border-slate-100 p-3">
-                  <Button
-                    onClick={() =>
-                      router.push(`/faculty/book-pa/${pa.id}${date ? `?date=${date}` : ""}`)
-                    }
-                    className="w-full cursor-pointer rounded-xl bg-indigo-600 text-white hover:bg-indigo-700"
-                  >
-                    <CalendarPlus className="mr-1.5 h-4 w-4" /> Open calendar
-                  </Button>
-                </div>
-              </div>
-            )
-          })}
+          <TablePagination
+            page={currentPage}
+            pageSize={pageSize}
+            total={filtered.length}
+            onPageChange={setPage}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            onPageSizeChange={setPageSize}
+          />
         </div>
       )}
     </div>

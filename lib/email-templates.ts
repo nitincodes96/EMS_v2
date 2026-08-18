@@ -178,6 +178,7 @@ export function bookingEmailHtml({
   intro,
   paName,
   facultyName,
+  cancelledByAdmin,
   departmentName,
   dateLabel,
   slotLabel,
@@ -192,6 +193,8 @@ export function bookingEmailHtml({
   intro: string
   paName: string
   facultyName: string
+  /** True when an admin cancelled this on the faculty's behalf — adds a callout row. */
+  cancelledByAdmin?: boolean
   departmentName: string
   dateLabel: string
   slotLabel: string
@@ -210,13 +213,61 @@ export function bookingEmailHtml({
       <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#475569;">${esc(intro)}</p>
       ${detailTable([
         { label: "Booked by", value: esc(facultyName) },
+        ...(cancelledByAdmin ? [{ label: "Cancelled by", value: "Admin (override)" }] : []),
         { label: "Department", value: esc(departmentName) },
         { label: "Date", value: esc(dateLabel) },
         { label: "Time slot", value: esc(slotLabel) },
         ...(workType ? [{ label: "Work type", value: esc(workType) }] : []),
-        { label: "Task", value: esc(task) },
+        ...(task.trim() ? [{ label: "Task", value: esc(task) }] : []),
       ])}
       ${locationBlock(locations)}
+      ${note ? `<p style="margin:0 0 20px;font-size:13px;line-height:1.6;color:#475569;background-color:#fffbeb;border-left:3px solid #f59e0b;padding:10px 12px;border-radius:6px;">Note: ${esc(note)}</p>` : ""}
+      ${bookingLink ? ctaButton(bookingLink, "View booking") : ""}
+    `,
+  })
+}
+
+/**
+ * Sent to the faculty when an admin closes a booking on their behalf — neither
+ * they nor the PA initiated it, so the faculty gets the same "here's what
+ * happened and why" treatment the PA's own booking emails get.
+ */
+export function bookingClosedByAdminEmailHtml({
+  facultyName,
+  paName,
+  statusLabel,
+  departmentName,
+  dateLabel,
+  slotLabel,
+  note,
+  bookingLink,
+  brandName = "EMS Portal",
+}: {
+  facultyName: string
+  paName: string
+  statusLabel: string
+  departmentName: string
+  dateLabel: string
+  slotLabel: string
+  note?: string | null
+  bookingLink?: string
+  brandName?: string
+}): string {
+  return emailLayout({
+    heading: "An admin updated your booking",
+    brandName,
+    bodyHtml: `
+      <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#475569;">Hi <strong>${esc(facultyName)}</strong>,</p>
+      <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#475569;">
+        An admin marked your booking with <strong>${esc(paName)}</strong> as <strong>${esc(statusLabel)}</strong> on your behalf.
+      </p>
+      ${detailTable([
+        { label: "Project Assistant", value: esc(paName) },
+        { label: "Department", value: esc(departmentName) },
+        { label: "Date", value: esc(dateLabel) },
+        { label: "Time slot", value: esc(slotLabel) },
+        { label: "New status", value: esc(statusLabel) },
+      ])}
       ${note ? `<p style="margin:0 0 20px;font-size:13px;line-height:1.6;color:#475569;background-color:#fffbeb;border-left:3px solid #f59e0b;padding:10px 12px;border-radius:6px;">Note: ${esc(note)}</p>` : ""}
       ${bookingLink ? ctaButton(bookingLink, "View booking") : ""}
     `,

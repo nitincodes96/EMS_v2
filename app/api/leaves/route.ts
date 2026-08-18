@@ -6,7 +6,7 @@ import { getSessionUser } from "@/lib/api-auth"
 import { leaveRequestEmailHtml } from "@/lib/email-templates"
 import { appLink, displayName, mailBrandName, notifyUsers } from "@/lib/notify"
 import {
-  approverRoleFor,
+  approverRolesFor,
   findLeaveApprovers,
   leaveDateLabel,
   leaveDays,
@@ -24,8 +24,9 @@ const REVIEW_PATH: Partial<Record<Role, string>> = {
 }
 
 /**
- * Tell everyone who can decide this request — Moderators for a PA's leave,
- * Admins for a Faculty member's — on the dashboard and by email. Delivery
+ * Tell everyone who can decide this request — Moderators and Admins for a
+ * PA's leave, Admins for a Faculty member's — on the dashboard and by email.
+ * Each approver gets a review link for their own role's screen. Delivery
  * problems are swallowed by notifyUsers so a flaky mail server can never lose
  * the request itself.
  */
@@ -34,13 +35,13 @@ async function notifyApprovers(leave: {
   startDate: Date
   endDate: Date
   reason: string | null
-  user: { name: string | null; username: string; email: string | null; role: Role }
+  user: { name: string | null; email: string | null; role: Role }
   department: { name: string }
 }) {
   const approvers = await findLeaveApprovers(leave.user.role)
   if (approvers.length === 0) {
     console.warn(
-      `No active ${approverRoleFor(leave.user.role) ?? "approver"} to notify for leave ${leave.id}`
+      `No active ${approverRolesFor(leave.user.role).map(roleLabel).join("/") || "approver"} to notify for leave ${leave.id}`
     )
     return
   }
@@ -49,7 +50,6 @@ async function notifyApprovers(leave: {
   const dateLabel = leaveDateLabel(leave.startDate, leave.endDate)
   const days = leaveDays(leave.startDate, leave.endDate)
   const brandName = await mailBrandName()
-  const reviewLink = appLink(REVIEW_PATH[approverRoleFor(leave.user.role) ?? "MODERATOR"] ?? "/")
 
   await notifyUsers(
     approvers.map((approver) => ({
@@ -70,7 +70,7 @@ async function notifyApprovers(leave: {
           dateLabel,
           days,
           reason: leave.reason,
-          reviewLink,
+          reviewLink: appLink(REVIEW_PATH[approver.role] ?? "/"),
         }),
       },
     }))
@@ -88,7 +88,6 @@ export async function GET() {
     select: {
       id: true,
       name: true,
-      username: true,
       departmentId: true,
     },
   })
@@ -205,7 +204,7 @@ export async function POST(request: Request) {
         status: "PENDING",
       },
       include: {
-        user: { select: { name: true, username: true, email: true, role: true } },
+        user: { select: { name: true, email: true, role: true } },
         department: { select: { name: true } },
       },
     })

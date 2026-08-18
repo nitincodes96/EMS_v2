@@ -56,6 +56,51 @@ export async function POST(request: Request) {
     const shiftStartTime = (formData.get("shiftStartTime") as string) || "09:00"
     const shiftEndTime = (formData.get("shiftEndTime") as string) || "18:00"
     const lateGraceMinutes = parseInt((formData.get("lateGraceMinutes") as string) || "5", 10)
+    const facultyBookingLimitRaw = formData.get("facultyBookingLimit") as string | null
+    const facultyBookingLimit =
+      facultyBookingLimitRaw != null && facultyBookingLimitRaw !== "" ? parseInt(facultyBookingLimitRaw, 10) : 3
+    if (isNaN(facultyBookingLimit) || facultyBookingLimit < 0) {
+      return NextResponse.json({ error: "Booking limit must be a non-negative number" }, { status: 400 })
+    }
+    // Geo-fencing is on unless explicitly switched off.
+    const geofenceEnabledRaw = formData.get("geofenceEnabled") as string | null
+    const geofenceEnabled = geofenceEnabledRaw != null ? geofenceEnabledRaw === "true" : true
+
+    const slotDurationRaw = formData.get("slotDurationMinutes") as string | null
+    const slotDurationMinutes =
+      slotDurationRaw != null && slotDurationRaw !== "" ? parseInt(slotDurationRaw, 10) : 30
+    if (isNaN(slotDurationMinutes) || slotDurationMinutes < 5 || slotDurationMinutes > 480) {
+      return NextResponse.json({ error: "Slot duration must be between 5 and 480 minutes" }, { status: 400 })
+    }
+
+    const bookingHorizonRaw = formData.get("bookingHorizonDays") as string | null
+    const bookingHorizonDays =
+      bookingHorizonRaw != null && bookingHorizonRaw !== "" ? parseInt(bookingHorizonRaw, 10) : 7
+    if (isNaN(bookingHorizonDays) || bookingHorizonDays < 1 || bookingHorizonDays > 90) {
+      return NextResponse.json({ error: "Booking window must be between 1 and 90 days" }, { status: 400 })
+    }
+
+    const bookingChangeCutoffRaw = formData.get("bookingChangeCutoffMinutes") as string | null
+    const bookingChangeCutoffMinutes =
+      bookingChangeCutoffRaw != null && bookingChangeCutoffRaw !== "" ? parseInt(bookingChangeCutoffRaw, 10) : 60
+    if (isNaN(bookingChangeCutoffMinutes) || bookingChangeCutoffMinutes < 0 || bookingChangeCutoffMinutes > 2880) {
+      return NextResponse.json(
+        { error: "Change cutoff must be between 0 and 2880 minutes (48 hours)" },
+        { status: 400 }
+      )
+    }
+
+    // Optional lunch break — both times or neither
+    const lunchStartRaw = ((formData.get("lunchStartTime") as string) || "").trim()
+    const lunchEndRaw = ((formData.get("lunchEndTime") as string) || "").trim()
+    if (Boolean(lunchStartRaw) !== Boolean(lunchEndRaw)) {
+      return NextResponse.json({ error: "Provide both lunch start and end, or leave both empty" }, { status: 400 })
+    }
+    if (lunchStartRaw && lunchEndRaw && lunchEndRaw <= lunchStartRaw) {
+      return NextResponse.json({ error: "Lunch end time must be after the start time" }, { status: 400 })
+    }
+    const lunchStartTime = lunchStartRaw || null
+    const lunchEndTime = lunchEndRaw || null
 
     let locations: LocationInput[] = []
     const locationsRaw = formData.get("locations") as string | null
@@ -101,6 +146,13 @@ export async function POST(request: Request) {
         shiftStartTime,
         shiftEndTime,
         lateGraceMinutes,
+        facultyBookingLimit,
+        slotDurationMinutes,
+        bookingHorizonDays,
+        bookingChangeCutoffMinutes,
+        geofenceEnabled,
+        lunchStartTime,
+        lunchEndTime,
         locations: {
           createMany: {
             data: locations.map((l) => ({

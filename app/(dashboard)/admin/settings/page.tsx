@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils"
 type Profile = {
   id: string
   name: string | null
-  username: string
   email: string | null
   empCode: string | null
   phoneNumber: string | null
@@ -33,7 +32,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  const [username, setUsername] = useState("")
+  const [name, setName] = useState("")
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
 
@@ -44,7 +43,7 @@ export default function SettingsPage() {
       const data = await res.json()
       if (res.ok) {
         setProfile(data.user)
-        setUsername(data.user.username)
+        setName(data.user.name || "")
         setPhotoPreview(data.user.photoUrl || null)
       }
     } finally {
@@ -56,7 +55,7 @@ export default function SettingsPage() {
     void load()
   }, [load])
 
-  const dirty = !!profile && (username.trim() !== profile.username || !!photoFile)
+  const dirty = !!profile && (name.trim() !== (profile.name || "") || !!photoFile)
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -77,7 +76,7 @@ export default function SettingsPage() {
 
   function handleDiscard() {
     if (!profile) return
-    setUsername(profile.username)
+    setName(profile.name || "")
     setPhotoFile(null)
     setPhotoPreview(profile.photoUrl || null)
     if (fileInputRef.current) fileInputRef.current.value = ""
@@ -122,16 +121,16 @@ export default function SettingsPage() {
   async function handleSave() {
     if (!profile || !dirty) return
 
-    const trimmedUsername = username.trim()
-    if (trimmedUsername.length < 3) {
-      toast.error("Username must be at least 3 characters")
+    const trimmedName = name.trim()
+    if (trimmedName.length < 2) {
+      toast.error("Name must be at least 2 characters")
       return
     }
 
     setSaving(true)
     try {
       const formData = new FormData()
-      if (trimmedUsername !== profile.username) formData.append("username", trimmedUsername)
+      if (trimmedName !== (profile.name || "")) formData.append("name", trimmedName)
       if (photoFile) formData.append("photo", photoFile)
 
       const res = await fetch("/api/users/me", { method: "PATCH", body: formData })
@@ -139,7 +138,7 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error(data?.error || "Failed to update profile")
 
       // Reflect the change in the auth session so the header avatar/name update live.
-      await update({ name: data.user?.username, photoUrl: data.user?.photoUrl ?? null })
+      await update({ name: data.user?.name, photoUrl: data.user?.photoUrl ?? null })
 
       toast.success("Profile updated")
       setPhotoFile(null)
@@ -188,7 +187,7 @@ export default function SettingsPage() {
     )
   }
 
-  const displayName = profile.name || profile.username
+  const displayName = profile.name || profile.email || "User"
 
   return (
     <div>
@@ -259,22 +258,22 @@ export default function SettingsPage() {
           <section className="rounded-lg border border-slate-200 bg-white">
             <header className="border-b border-slate-100 px-6 py-4">
               <h2 className="text-sm font-semibold text-slate-900">Account</h2>
-              <p className="mt-0.5 text-xs text-slate-500">Your sign-in identity within the department.</p>
+              <p className="mt-0.5 text-xs text-slate-500">Your display name within the organization.</p>
             </header>
 
             <div className="px-6 py-5">
-              <label htmlFor="username" className="block text-xs font-medium text-slate-700">
-                Username
+              <label htmlFor="name" className="block text-xs font-medium text-slate-700">
+                Full name
               </label>
               <input
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
                 spellCheck={false}
                 autoComplete="off"
                 className="mt-1.5 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 hover:border-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
               />
-              <p className="mt-1.5 text-xs text-slate-400">Minimum 3 characters.</p>
+              <p className="mt-1.5 text-xs text-slate-400">Minimum 2 characters.</p>
             </div>
 
             <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-6 py-4">
@@ -310,7 +309,6 @@ export default function SettingsPage() {
             </header>
 
             <dl className="divide-y divide-slate-100 px-6">
-              <Field label="Full name" value={profile.name || profile.username} />
               <Field label="Email" value={profile.email} />
               <Field label="Phone number" value={profile.phoneNumber} />
               <Field label="Organization" value={profile.organization?.name} />
@@ -332,7 +330,7 @@ function PageHeader() {
     <header className="mb-6 border-b border-slate-200 pb-5">
       <h1 className="text-xl font-semibold tracking-tight text-slate-900">Settings</h1>
       <p className="mt-1 text-sm text-slate-500">
-        View your profile and update your username or photo.
+        View your profile and update your name or photo.
       </p>
     </header>
   )

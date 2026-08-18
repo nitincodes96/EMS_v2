@@ -10,9 +10,9 @@ import { otpEmailHtml } from "@/lib/email-templates";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { organizationName, logoBase64, username, email, password } = body;
+    const { organizationName, logoBase64, name, email, password } = body;
 
-    if (!organizationName || !username || !email || !password) {
+    if (!organizationName || !name || !email || !password) {
       return NextResponse.json({ message: "Missing required fields" }, { status: 400 });
     }
 
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
       return await tx.user.create({
         data: {
           email,
-          username,
+          name,
           password: hashedPassword,
           role: role,
           otp,

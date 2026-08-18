@@ -3,12 +3,12 @@ import { Prisma } from "@prisma/client"
 import prisma from "@/lib/prisma"
 import { getSessionUser, hasRole } from "@/lib/api-auth"
 import { isValidWorkType } from "@/lib/work-types"
-import { checkSlotAvailability, toBookingDate } from "@/lib/booking-rules"
+import { checkBookingHorizon, checkSlotAvailability, countActiveFacultyBookings, toBookingDate } from "@/lib/booking-rules"
 import { notifyPaOfBooking } from "@/lib/booking-notify"
 
 const LIST_INCLUDE = {
-  faculty: { select: { id: true, name: true, username: true, email: true, photoUrl: true } },
-  pa: { select: { id: true, name: true, username: true, email: true, photoUrl: true } },
+  faculty: { select: { id: true, name: true, email: true, photoUrl: true } },
+  pa: { select: { id: true, name: true, email: true, photoUrl: true } },
   department: { select: { id: true, name: true } },
 } as const
 
@@ -28,7 +28,7 @@ function bucketWhere(bucket: string | null, now: Date): Prisma.BookingWhereInput
     case "COMPLETED":
       return { status: "COMPLETED" }
     case "CLOSED":
-      return { status: { in: ["ABSENT", "CANCELLED"] } }
+      return { status: { in: ["ABSENT", "INCOMPLETE", "CANCELLED"] } }
     default:
       return {}
   }
@@ -50,6 +50,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const departmentIdParam = searchParams.get("departmentId")
   const bucket = searchParams.get("bucket")
+  const sort = searchParams.get("sort")
   const pageParam = searchParams.get("page")
   const limitParam = searchParams.get("limit")
   const q = (searchParams.get("q") ?? "").trim()
@@ -70,8 +71,8 @@ export async function GET(request: Request) {
         OR: [
           { workType: { contains: q } },
           { task: { contains: q } },
-          { faculty: { is: { OR: [{ name: { contains: q } }, { username: { contains: q } }, { email: { contains: q } }] } } },
-          { pa: { is: { OR: [{ name: { contains: q } }, { username: { contains: q } }, { email: { contains: q } }] } } },
+          { faculty: { is: { OR: [{ name: { contains: q } }, { email: { contains: q } }] } } },
+          { pa: { is: { OR: [{ name: { contains: q } }, { email: { contains: q } }] } } },
         ],
       }
     : {}
@@ -79,11 +80,18 @@ export async function GET(request: Request) {
   const now = new Date()
   const where: Prisma.BookingWhereInput = { ...scopeWhere, ...bucketWhere(bucket, now), ...searchWhere }
 
-  // Soonest-first makes sense for upcoming work; everything else reads newest-first
+  // Soonest-first makes sense for upcoming work. "createdAt" is an explicit
+  // opt-in for history-style lists (e.g. faculty's My Bookings) where the most
+  // recently made booking belongs at the top, regardless of which date it's
+  // for — sorting by slot date there reads as random/backwards, since a
+  // booking made just now for next week would otherwise outrank one made
+  // yesterday for tomorrow. Everything else defaults to newest slot date first.
   const orderBy: Prisma.BookingOrderByWithRelationInput[] =
     bucket === "UPCOMING"
       ? [{ date: "asc" }, { startTime: "asc" }]
-      : [{ date: "desc" }, { startTime: "desc" }]
+      : sort === "createdAt"
+        ? [{ createdAt: "desc" }]
+        : [{ date: "desc" }, { startTime: "desc" }]
 
   // Legacy/full-list mode
   if (pageParam === null && limitParam === null) {
@@ -137,19 +145,25 @@ export async function POST(request: Request) {
       date: string
       startTime: string
       endTime: string
-      task: string
+      task?: string
       workType?: string
     }
 
-    if (!paId || !date || !startTime || !endTime || !task?.trim()) {
-      return NextResponse.json({ error: "PA, date, time slot and task are required" }, { status: 400 })
+    if (!paId || !date || !startTime || !endTime) {
+      return NextResponse.json({ error: "PA, date and time slot are required" }, { status: 400 })
     }
+
+    // Description is optional
+    const taskText = task?.trim() || ""
 
     if (workType != null && !isValidWorkType(workType)) {
       return NextResponse.json({ error: "Invalid work type" }, { status: 400 })
     }
 
-    const pa = await prisma.user.findUnique({ where: { id: paId } })
+    const pa = await prisma.user.findUnique({
+      where: { id: paId },
+      include: { department: { select: { facultyBookingLimit: true, bookingHorizonDays: true } } },
+    })
     if (!pa || pa.role !== "PROJECT_ASSISTANT") {
       return NextResponse.json({ error: "Selected user is not a Project Assistant" }, { status: 400 })
     }
@@ -164,8 +178,23 @@ export async function POST(request: Request) {
     if (sessionUser.role === "FACULTY" && pa.departmentId !== sessionUser.departmentId) {
       return NextResponse.json({ error: "You can only book PAs in your department" }, { status: 403 })
     }
-    if (!pa.departmentId) {
+    if (!pa.departmentId || !pa.department) {
       return NextResponse.json({ error: "PA has no department" }, { status: 400 })
+    }
+
+    // Department-level cap on how many bookings a faculty can have open at once
+    // (FR: PA booking limit). 0 = unlimited.
+    const limit = pa.department.facultyBookingLimit
+    if (limit > 0) {
+      const activeCount = await countActiveFacultyBookings(sessionUser.id, pa.departmentId)
+      if (activeCount >= limit) {
+        return NextResponse.json(
+          {
+            error: `You've reached your active booking limit (${limit}). Complete or cancel an existing booking before creating a new one.`,
+          },
+          { status: 409 }
+        )
+      }
     }
 
     // Store the calendar date as UTC midnight so the @db.Date column keeps the
@@ -174,6 +203,11 @@ export async function POST(request: Request) {
     const bookingDate = toBookingDate(date)
     const start = new Date(`${date}T${startTime}`)
     const end = new Date(`${date}T${endTime}`)
+
+    const horizonError = checkBookingHorizon(bookingDate, pa.department.bookingHorizonDays)
+    if (horizonError) {
+      return NextResponse.json({ error: horizonError.error }, { status: horizonError.status })
+    }
 
     const unavailable = await checkSlotAvailability({ paId, bookingDate, start, end })
     if (unavailable) {
@@ -189,12 +223,12 @@ export async function POST(request: Request) {
         startTime: start,
         endTime: end,
         workType: workType ?? null,
-        task: task.trim(),
+        task: taskText,
         status: "BOOKED",
       },
       include: {
-        faculty: { select: { id: true, name: true, username: true, email: true } },
-        pa: { select: { id: true, name: true, username: true, email: true } },
+        faculty: { select: { id: true, name: true, email: true } },
+        pa: { select: { id: true, name: true, email: true } },
       },
     })
 

@@ -31,11 +31,30 @@ model Department {
   shiftEndTime     String @default("18:00")
   lateGraceMinutes Int    @default(5)
 
+  // Optional lunch break — slots overlapping this window aren't bookable.
+  // Null on both = no break configured.
+  lunchStartTime String?
+  lunchEndTime   String?
+
   // Feature flags (FR-2.9)
-  geofenceEnabled  Boolean @default(false)
+  geofenceEnabled  Boolean @default(true)
   bookingEnabled   Boolean @default(true)
   bookingStartTime String  @default("09:00")
   bookingEndTime   String  @default("17:00")
+
+  // Max bookings a faculty may have simultaneously active (status BOOKED)
+  // with this department's PAs. 0 = unlimited.
+  facultyBookingLimit Int @default(3)
+
+  // Length of one bookable slot, in minutes. Drives the booking calendar grid.
+  slotDurationMinutes Int @default(30)
+
+  // How many days ahead a faculty may book a PA (today counts as day 0).
+  bookingHorizonDays Int @default(7)
+
+  // A booking can only be cancelled or rescheduled up to this many minutes
+  // before its start time. 0 = allowed right up until the start time.
+  bookingChangeCutoffMinutes Int @default(60)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -66,7 +85,6 @@ model User {
   id           String      @id @default(uuid())
   email        String?     @unique
   empCode      String?     @unique
-  username     String
   name         String?
   password     String?
   role         Role        @default(PROJECT_ASSISTANT)
@@ -180,6 +198,11 @@ model Booking {
   rating   Int?
   ratedAt  DateTime?
 
+  // The PA's own report on the work — null = not reported yet
+  paStatus   PaWorkStatus?
+  paRemark   String?       @db.Text
+  paMarkedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -268,8 +291,17 @@ enum LeaveStatus {
 enum BookingStatus {
   BOOKED
   COMPLETED
+  // PA was present/attended, but the work wasn't finished — distinct from
+  // ABSENT (PA never reported for the slot).
+  INCOMPLETE
   ABSENT
   CANCELLED
+}
+
+// The PA's self-report on whether they carried out the booked work.
+enum PaWorkStatus {
+  DONE
+  NOT_DONE
 }
 
 enum BookingLogAction {
@@ -278,7 +310,9 @@ enum BookingLogAction {
   CANCELLED
   COMPLETED
   MARKED_ABSENT
+  MARKED_INCOMPLETE
   RATED
+  PA_REPORTED
 }
 
 enum NotificationType {

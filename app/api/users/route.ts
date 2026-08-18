@@ -127,8 +127,7 @@ export async function POST(request: Request) {
       const user = await prisma.user.create({
         data: {
           empCode,
-          username: empCode,
-          name: name || null,
+          name: name || empCode,
           password: null,
           role: "FACULTY",
           departmentId,
@@ -156,15 +155,13 @@ export async function POST(request: Request) {
     }
 
     const phoneNumber = (formData.get("phoneNumber") as string) || null
-    const username = name || email.split("@")[0]
 
     const { token: inviteToken, expiry: inviteTokenExpiry } = generateInviteToken()
 
     const user = await prisma.user.create({
       data: {
         email,
-        username,
-        name: name || null,
+        name: name || email.split("@")[0],
         password: null,
         role: isModerator ? "MODERATOR" : "PROJECT_ASSISTANT",
         departmentId: isModerator ? null : departmentId,

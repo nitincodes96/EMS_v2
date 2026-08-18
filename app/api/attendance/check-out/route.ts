@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { startOfDay, endOfDay } from "date-fns"
 import prisma from "@/lib/prisma"
 import { getSessionUser } from "@/lib/api-auth"
-import { haversineDistanceMeters } from "@/lib/geo"
+import { checkGeofence } from "@/lib/attendance-rules"
 
 export async function POST(request: Request) {
   const sessionUser = await getSessionUser()
@@ -12,10 +12,13 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { latitude, longitude } = body as { latitude: number; longitude: number }
+    const { latitude, longitude } = body as { latitude?: number; longitude?: number }
+    const lat = typeof latitude === "number" ? latitude : null
+    const lng = typeof longitude === "number" ? longitude : null
 
-    if (typeof latitude !== "number" || typeof longitude !== "number") {
-      return NextResponse.json({ error: "latitude and longitude are required" }, { status: 400 })
+    const geofenceError = await checkGeofence({ departmentId: sessionUser.departmentId, latitude: lat, longitude: lng })
+    if (geofenceError) {
+      return NextResponse.json({ error: geofenceError.error }, { status: geofenceError.status })
     }
 
     const now = new Date()
@@ -31,25 +34,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No open check-in found for today" }, { status: 404 })
     }
 
-    const locations = await prisma.departmentLocation.findMany({
-      where: { departmentId: sessionUser.departmentId },
-    })
-
-    if (locations.length > 0) {
-      const withinAny = locations.some(
-        (loc) => haversineDistanceMeters(latitude, longitude, loc.latitude, loc.longitude) <= loc.radiusMeters
-      )
-      if (!withinAny) {
-        return NextResponse.json({ error: "You are outside all configured check-out locations" }, { status: 400 })
-      }
-    }
-
     const attendance = await prisma.attendance.update({
       where: { id: todaysAttendance.id },
       data: {
         checkOutTime: now,
-        checkOutLatitude: latitude,
-        checkOutLongitude: longitude,
+        checkOutLatitude: lat,
+        checkOutLongitude: lng,
       },
     })
 

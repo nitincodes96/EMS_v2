@@ -14,7 +14,6 @@ export async function GET() {
     select: {
       id: true,
       name: true,
-      username: true,
       email: true,
       empCode: true,
       phoneNumber: true,
@@ -65,18 +64,18 @@ export async function PATCH(request: Request) {
   try {
     const formData = await request.formData()
 
-    const usernameRaw = formData.get("username") as string | null
+    const nameRaw = formData.get("name") as string | null
     const photo = formData.get("photo") as File | null
     const removePhoto = formData.get("removePhoto") === "true"
 
     const data: Record<string, unknown> = {}
 
-    if (usernameRaw !== null) {
-      const username = usernameRaw.trim()
-      if (!username || username.length < 3) {
-        return NextResponse.json({ error: "Username must be at least 3 characters" }, { status: 400 })
+    if (nameRaw !== null) {
+      const name = nameRaw.trim()
+      if (!name || name.length < 2) {
+        return NextResponse.json({ error: "Name must be at least 2 characters" }, { status: 400 })
       }
-      data.username = username
+      data.name = name
     }
 
     let newPhotoUrl: string | undefined
@@ -97,7 +96,6 @@ export async function PATCH(request: Request) {
       select: {
         id: true,
         name: true,
-        username: true,
         email: true,
         empCode: true,
         phoneNumber: true,

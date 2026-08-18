@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client"
 import { startOfDay } from "date-fns"
 import prisma from "@/lib/prisma"
 import { getSessionUser } from "@/lib/api-auth"
-import { haversineDistanceMeters } from "@/lib/geo"
+import { checkGeofence } from "@/lib/attendance-rules"
 
 export async function POST(request: Request) {
   const sessionUser = await getSessionUser()
@@ -13,23 +13,13 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { latitude, longitude } = body as { latitude: number; longitude: number }
+    const { latitude, longitude } = body as { latitude?: number; longitude?: number }
+    const lat = typeof latitude === "number" ? latitude : null
+    const lng = typeof longitude === "number" ? longitude : null
 
-    if (typeof latitude !== "number" || typeof longitude !== "number") {
-      return NextResponse.json({ error: "latitude and longitude are required" }, { status: 400 })
-    }
-
-    const locations = await prisma.departmentLocation.findMany({
-      where: { departmentId: sessionUser.departmentId },
-    })
-
-    if (locations.length > 0) {
-      const withinAny = locations.some(
-        (loc) => haversineDistanceMeters(latitude, longitude, loc.latitude, loc.longitude) <= loc.radiusMeters
-      )
-      if (!withinAny) {
-        return NextResponse.json({ error: "You are outside all configured check-in locations" }, { status: 400 })
-      }
+    const geofenceError = await checkGeofence({ departmentId: sessionUser.departmentId, latitude: lat, longitude: lng })
+    if (geofenceError) {
+      return NextResponse.json({ error: geofenceError.error }, { status: geofenceError.status })
     }
 
     const now = new Date()
@@ -39,8 +29,8 @@ export async function POST(request: Request) {
         userId: sessionUser.id,
         date: startOfDay(now),
         checkInTime: now,
-        checkInLatitude: latitude,
-        checkInLongitude: longitude,
+        checkInLatitude: lat,
+        checkInLongitude: lng,
       },
     })
 

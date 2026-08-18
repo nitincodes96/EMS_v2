@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { getSessionUser } from "@/lib/api-auth"
+import { countActiveFacultyBookings } from "@/lib/booking-rules"
 
 export async function GET() {
   const sessionUser = await getSessionUser()
@@ -22,6 +23,10 @@ export async function GET() {
     return NextResponse.json({ error: "Department not found" }, { status: 404 })
   }
 
+  // Only meaningful for faculty booking PAs — the cap tracks their own open bookings.
+  const activeBookingCount =
+    sessionUser.role === "FACULTY" ? await countActiveFacultyBookings(sessionUser.id, department.id) : null
+
   return NextResponse.json({
     department: {
       id: department.id,
@@ -31,6 +36,9 @@ export async function GET() {
       shiftStartTime: department.shiftStartTime,
       shiftEndTime: department.shiftEndTime,
       workingDays: department.workingDays,
+      geofenceEnabled: department.geofenceEnabled,
+      facultyBookingLimit: department.facultyBookingLimit,
+      facultyActiveBookingCount: activeBookingCount,
       holidays: department.holidays.map((holiday) => ({
         id: holiday.id,
         name: holiday.name,

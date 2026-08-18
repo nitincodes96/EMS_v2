@@ -3,14 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { format, isToday, isTomorrow } from "date-fns"
 import {
-  ArrowRight,
   Ban,
-  Building2,
-  CalendarDays,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   CircleDot,
+  ClipboardCheck,
   Clock3,
   GraduationCap,
   Info,
@@ -20,19 +16,32 @@ import {
   Search,
   Star,
   UserX,
+  XCircle,
 } from "lucide-react"
 
+import { toast } from "react-hot-toast"
+
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
 import { PageHeader } from "@/components/shared/page-header"
+import { TablePagination } from "@/components/shared/table-pagination"
 import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type BookingStatus = "BOOKED" | "COMPLETED" | "ABSENT" | "CANCELLED"
+type BookingStatus = "BOOKED" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
+
+type PaWorkStatus = "DONE" | "NOT_DONE"
 
 type Booking = {
   id: string
@@ -43,12 +52,16 @@ type Booking = {
   task: string
   status: BookingStatus
   rating: number | null
-  faculty: { id: string; name: string | null; username: string; email: string; photoUrl: string | null }
+  paStatus: PaWorkStatus | null
+  paRemark: string | null
+  paMarkedAt: string | null
+  createdAt: string
+  faculty: { id: string; name: string | null; email: string; photoUrl: string | null }
   department: { id: string; name: string } | null
 }
 
 /** Status shown on a card — derived from the booking status plus the clock. */
-type TaskStatus = "UPCOMING" | "IN_PROGRESS" | "COMPLETED" | "ABSENT" | "CANCELLED"
+type TaskStatus = "UPCOMING" | "IN_PROGRESS" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
 
 type FilterKey = "ALL" | "UPCOMING" | "IN_PROGRESS" | "COMPLETED" | "CLOSED"
 
@@ -81,6 +94,13 @@ const STATUS_CONFIG: Record<
     glow: "group-hover:shadow-emerald-200/50",
     icon: <CheckCircle2 className="h-3 w-3" />,
   },
+  INCOMPLETE: {
+    label: "Not completed",
+    badge: "bg-amber-50 text-amber-700 ring-1 ring-amber-200/60",
+    accent: "border-l-amber-500",
+    glow: "group-hover:shadow-amber-200/50",
+    icon: <XCircle className="h-3 w-3" />,
+  },
   ABSENT: {
     label: "Marked absent",
     badge: "bg-red-50 text-red-700 ring-1 ring-red-200/60",
@@ -101,19 +121,28 @@ const STATUS_RANK: Record<TaskStatus, number> = {
   IN_PROGRESS: 0,
   UPCOMING: 1,
   COMPLETED: 2,
-  ABSENT: 3,
-  CANCELLED: 4,
+  INCOMPLETE: 3,
+  ABSENT: 4,
+  CANCELLED: 5,
 }
 
 const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: "ALL", label: "All Tasks" },
+  { key: "ALL", label: "All" },
   { key: "UPCOMING", label: "Upcoming" },
   { key: "IN_PROGRESS", label: "In Progress" },
   { key: "COMPLETED", label: "Completed" },
   { key: "CLOSED", label: "Closed" },
 ]
 
-const PAGE_SIZE = 12
+// Counts shown on the filter pills. ALL/CLOSED have no dedicated server count.
+type Stats = { upcoming: number; inProgress: number; completed: number }
+const FILTER_COUNTS: Partial<Record<FilterKey, (s: Stats) => number>> = {
+  UPCOMING: (s) => s.upcoming,
+  IN_PROGRESS: (s) => s.inProgress,
+  COMPLETED: (s) => s.completed,
+}
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50]
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -121,6 +150,7 @@ const PAGE_SIZE = 12
 
 function deriveStatus(booking: Booking, now: Date): TaskStatus {
   if (booking.status === "COMPLETED") return "COMPLETED"
+  if (booking.status === "INCOMPLETE") return "INCOMPLETE"
   if (booking.status === "ABSENT") return "ABSENT"
   if (booking.status === "CANCELLED") return "CANCELLED"
 
@@ -149,8 +179,36 @@ export default function PATasksPage() {
   const [search, setSearch] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0])
   const [pagination, setPagination] = useState({ page: 1, total: 0, totalPages: 1 })
   const [stats, setStats] = useState({ upcoming: 0, inProgress: 0, completed: 0 })
+
+  // A ?bookingId= handoff (e.g. from the "View booking" link on the calendar)
+  // opens that booking's details directly, regardless of the current page/filter.
+  const [deepLinkBooking, setDeepLinkBooking] = useState<Booking | null>(null)
+  const [deepLinkReportOpen, setDeepLinkReportOpen] = useState(false)
+
+  const loadDeepLink = useCallback(async (bookingId: string) => {
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`)
+      const data = await res.json()
+      if (res.ok) setDeepLinkBooking(data.booking)
+      else toast.error(data?.error || "Could not load that booking")
+    } catch {
+      toast.error("Could not load that booking")
+    }
+  }, [])
+
+  useEffect(() => {
+    const bookingId = new URLSearchParams(window.location.search).get("bookingId")
+    if (bookingId) void loadDeepLink(bookingId)
+  }, [loadDeepLink])
+
+  function closeDeepLink() {
+    setDeepLinkBooking(null)
+    setDeepLinkReportOpen(false)
+    window.history.replaceState(null, "", "/project-assistant/tasks")
+  }
 
   // Debounce typing so we don't fetch on every keystroke; reset to page 1 on change
   useEffect(() => {
@@ -165,7 +223,7 @@ export default function PATasksPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
+      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) })
       if (filter !== "ALL") params.set("bucket", filter)
       if (debouncedSearch) params.set("q", debouncedSearch)
 
@@ -181,7 +239,7 @@ export default function PATasksPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, filter, debouncedSearch])
+  }, [page, pageSize, filter, debouncedSearch])
 
   useEffect(() => {
     void load()
@@ -189,6 +247,11 @@ export default function PATasksPage() {
 
   function changeFilter(next: FilterKey) {
     setFilter(next)
+    setPage(1)
+  }
+
+  function changePageSize(size: number) {
+    setPageSize(size)
     setPage(1)
   }
 
@@ -242,8 +305,8 @@ export default function PATasksPage() {
       <div className="flex flex-col gap-4">
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">Task Overview</h2>
 
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="relative min-w-55 flex-1 lg:max-w-sm">
+        <div className="flex flex-col gap-3">
+          <div className="relative min-w-55 lg:max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
               value={search}
@@ -253,21 +316,34 @@ export default function PATasksPage() {
             />
           </div>
 
-          <div className="inline-flex flex-wrap rounded-xl bg-slate-100/80 p-1 shadow-sm ring-1 ring-slate-200/50">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => changeFilter(f.key)}
-              className={cn(
-                "relative flex cursor-pointer items-center justify-center rounded-lg px-4 py-1.5 text-sm font-medium transition-all duration-200",
-                filter === f.key
-                  ? "bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200/50"
-                  : "text-slate-500 hover:bg-slate-200/50 hover:text-slate-700"
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
+          <div className="flex flex-wrap gap-2">
+            {FILTERS.map((f) => {
+              const count = FILTER_COUNTS[f.key]?.(stats)
+              return (
+                <button
+                  key={f.key}
+                  onClick={() => changeFilter(f.key)}
+                  className={cn(
+                    "inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors",
+                    filter === f.key
+                      ? "border-indigo-600 bg-indigo-600 text-white"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  )}
+                >
+                  {f.label}
+                  {count != null && (
+                    <span
+                      className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none",
+                        filter === f.key ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+                      )}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
           </div>
         </div>
       </div>
@@ -289,52 +365,60 @@ export default function PATasksPage() {
           </p>
         </div>
       ) : (
-        <>
-          <div className={cn("grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3", loading && "opacity-60")}>
-            {visible.map(({ booking, status }) => (
-              <TaskCard key={booking.id} booking={booking} status={status} />
-            ))}
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className={cn("w-full min-w-200 text-sm", loading && "opacity-60")}>
+              <thead className="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Task</th>
+                  <th className="px-4 py-3">When</th>
+                  <th className="px-4 py-3">Faculty</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Your update</th>
+                  <th className="px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map(({ booking, status }) => (
+                  <TaskRow key={booking.id} booking={booking} status={status} onReported={load} />
+                ))}
+              </tbody>
+            </table>
           </div>
 
-          {pagination.totalPages > 1 && (
-            <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-100 pt-5 sm:flex-row">
-              <p className="text-sm text-slate-500">
-                Showing{" "}
-                <span className="font-medium text-slate-700">
-                  {(pagination.page - 1) * PAGE_SIZE + 1}–
-                  {Math.min(pagination.page * PAGE_SIZE, pagination.total)}
-                </span>{" "}
-                of <span className="font-medium text-slate-700">{pagination.total}</span> tasks
-              </p>
+          <TablePagination
+            page={pagination.page}
+            pageSize={pageSize}
+            total={pagination.total}
+            onPageChange={setPage}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            onPageSizeChange={changePageSize}
+          />
+        </div>
+      )}
 
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={loading || pagination.page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="cursor-pointer"
-                >
-                  <ChevronLeft className="mr-1 h-4 w-4" /> Previous
-                </Button>
+      {deepLinkBooking && !deepLinkReportOpen && (
+        <TaskDetailsDialog
+          booking={deepLinkBooking}
+          status={deriveStatus(deepLinkBooking, new Date())}
+          onClose={closeDeepLink}
+          onReport={
+            deriveStatus(deepLinkBooking, new Date()) === "IN_PROGRESS"
+              ? () => setDeepLinkReportOpen(true)
+              : undefined
+          }
+        />
+      )}
 
-                <span className="px-3 text-sm font-medium text-slate-600">
-                  Page {pagination.page} of {pagination.totalPages}
-                </span>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={loading || pagination.page >= pagination.totalPages}
-                  onClick={() => setPage((p) => p + 1)}
-                  className="cursor-pointer"
-                >
-                  Next <ChevronRight className="ml-1 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </>
+      {deepLinkBooking && deepLinkReportOpen && (
+        <PaReportDialog
+          booking={deepLinkBooking}
+          onClose={() => setDeepLinkReportOpen(false)}
+          onDone={async () => {
+            closeDeepLink()
+            await load()
+          }}
+        />
       )}
     </div>
   )
@@ -344,108 +428,366 @@ export default function PATasksPage() {
 // Card
 // ---------------------------------------------------------------------------
 
-function TaskCard({ booking, status }: { booking: Booking; status: TaskStatus }) {
-  const config = STATUS_CONFIG[status]
-  const facultyName = booking.faculty.name || booking.faculty.username
-  // Only an open booking can still be cancelled or rescheduled — by the faculty.
-  const isActive = booking.status === "BOOKED"
-
+/** Small badge summarising the PA's self-report state. */
+function PaReportBadge({ status }: { status: PaWorkStatus | null }) {
+  if (!status) return <span className="text-xs text-slate-400">Not reported</span>
   return (
-    <article
+    <span
       className={cn(
-        "group relative flex flex-col rounded-2xl border border-l-4 bg-white p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl",
-        config.accent,
-        config.glow
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
+        status === "DONE" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
       )}
     >
-      {/* Header: Status + Date */}
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <span
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide",
-            config.badge
-          )}
-        >
-          {config.icon}
-          {config.label}
-        </span>
-        <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-slate-500">
-          <CalendarDays className="h-3.5 w-3.5" />
-          {relativeDay(booking.date)}
-        </span>
-      </div>
+      {status === "DONE" ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+      {status === "DONE" ? "Done" : "Not done"}
+    </span>
+  )
+}
 
-      {/* Work type + slot */}
-      <h3 className="text-base font-semibold leading-snug text-slate-900 transition-colors group-hover:text-indigo-600">
-        {booking.workType ?? "Assigned task"}
-      </h3>
+function TaskRow({
+  booking,
+  status,
+  onReported,
+}: {
+  booking: Booking
+  status: TaskStatus
+  onReported: () => void | Promise<void>
+}) {
+  const [reportOpen, setReportOpen] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const config = STATUS_CONFIG[status]
+  const facultyName = booking.faculty.name || booking.faculty.email
+  // Reporting only makes sense once the slot has actually started — an
+  // upcoming booking has no work to mark done or not done yet.
+  const canReport = status === "IN_PROGRESS"
 
-      <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200/50">
-          <Clock3 className="h-3.5 w-3.5 text-slate-400" />
-          {format(new Date(booking.startTime), "h:mm a")}
-          <ArrowRight className="mx-0.5 h-3 w-3 text-slate-300" />
-          {format(new Date(booking.endTime), "h:mm a")}
-        </div>
+  return (
+    <>
+      <tr className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
+        {/* Task */}
+        <td className="px-4 py-3">
+          <button
+            onClick={() => setDetailsOpen(true)}
+            className="max-w-xs cursor-pointer text-left"
+          >
+            <p className="truncate font-medium text-slate-900 hover:text-indigo-600">
+              {booking.workType ?? "Assigned task"}
+            </p>
+            <p className="truncate text-xs text-slate-400">
+              {booking.task?.trim() || "No description"}
+            </p>
+          </button>
+        </td>
 
-        {booking.rating != null && (
-          <div className="flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200/50">
-            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-            {booking.rating}/5
+        {/* When */}
+        <td className="whitespace-nowrap px-4 py-3">
+          <p className="font-medium text-slate-700">{relativeDay(booking.date)}</p>
+          <p className="text-xs text-slate-400">
+            {format(new Date(booking.startTime), "h:mm a")} – {format(new Date(booking.endTime), "h:mm a")}
+          </p>
+          <p className="text-xs text-slate-400">Booked {format(new Date(booking.createdAt), "MMM d, yyyy")}</p>
+        </td>
+
+        {/* Faculty */}
+        <td className="whitespace-nowrap px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <EntityAvatar
+              name={facultyName}
+              fallbackText={facultyName}
+              imageUrl={booking.faculty.photoUrl}
+              className="h-8 w-8"
+            />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-slate-900">{facultyName}</p>
+              <a
+                href={`mailto:${booking.faculty.email}`}
+                className="truncate text-xs text-slate-400 hover:text-indigo-600"
+              >
+                {booking.faculty.email}
+              </a>
+            </div>
           </div>
-        )}
-      </div>
+        </td>
 
-      {/* Instructions */}
-      <p className="mt-4 line-clamp-3 flex-1 text-sm leading-relaxed text-slate-600">{booking.task}</p>
+        {/* Status */}
+        <td className="whitespace-nowrap px-4 py-3">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
+              config.badge
+            )}
+          >
+            {config.icon}
+            {config.label}
+          </span>
+          {booking.rating != null && (
+            <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-amber-600">
+              <Star className="h-3 w-3 fill-amber-400 text-amber-400" /> {booking.rating}/5
+            </span>
+          )}
+        </td>
 
-      {/* Footer: requester */}
-      <div className="mt-6 flex flex-col gap-3 rounded-xl bg-slate-50/80 p-3 ring-1 ring-slate-100">
-        <div className="flex items-center gap-3">
-          <EntityAvatar
-            name={facultyName}
-            fallbackText={facultyName}
-            imageUrl={booking.faculty.photoUrl}
-            size="sm"
-            className="h-9 w-9 shadow-sm"
-          />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-slate-900">{facultyName}</p>
-            <p className="flex items-center gap-1.5 truncate text-xs font-medium text-slate-500">
-              <GraduationCap className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-              Faculty
+        {/* PA report */}
+        <td className="whitespace-nowrap px-4 py-3">
+          <PaReportBadge status={booking.paStatus} />
+        </td>
+
+        {/* Action */}
+        <td className="whitespace-nowrap px-4 py-3 text-right">
+          {canReport ? (
+            <Button variant="outline" size="sm" onClick={() => setReportOpen(true)} className="cursor-pointer">
+              <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" />
+              {booking.paStatus ? "Update" : "Mark"}
+            </Button>
+          ) : (
+            <button
+              onClick={() => setDetailsOpen(true)}
+              className="cursor-pointer text-xs font-medium text-indigo-600 hover:underline"
+            >
+              View
+            </button>
+          )}
+        </td>
+      </tr>
+
+      {reportOpen && (
+        <PaReportDialog
+          booking={booking}
+          onClose={() => setReportOpen(false)}
+          onDone={async () => {
+            setReportOpen(false)
+            await onReported()
+          }}
+        />
+      )}
+
+      {detailsOpen && (
+        <TaskDetailsDialog
+          booking={booking}
+          status={status}
+          onClose={() => setDetailsOpen(false)}
+          onReport={canReport ? () => {
+            setDetailsOpen(false)
+            setReportOpen(true)
+          } : undefined}
+        />
+      )}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Read-only task details (opened from a row)
+// ---------------------------------------------------------------------------
+
+function TaskDetailsDialog({
+  booking,
+  status,
+  onClose,
+  onReport,
+}: {
+  booking: Booking
+  status: TaskStatus
+  onClose: () => void
+  onReport?: () => void
+}) {
+  // The booking can still be cancelled/rescheduled by faculty any time it's
+  // open — even before it starts — separately from whether reporting is
+  // available (only once work has begun).
+  const isBookingOpen = booking.status === "BOOKED"
+  const config = STATUS_CONFIG[status]
+  const facultyName = booking.faculty.name || booking.faculty.email
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="bg-white sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-slate-900">{booking.workType ?? "Assigned task"}</DialogTitle>
+          <DialogDescription>
+            {relativeDay(booking.date)} · {format(new Date(booking.startTime), "h:mm a")} –{" "}
+            {format(new Date(booking.endTime), "h:mm a")}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 text-sm">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
+                config.badge
+              )}
+            >
+              {config.icon}
+              {config.label}
+            </span>
+            <PaReportBadge status={booking.paStatus} />
+          </div>
+
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Description</p>
+            <p className="mt-1 whitespace-pre-wrap leading-relaxed text-slate-700">
+              {booking.task?.trim() || <span className="italic text-slate-400">No description provided.</span>}
             </p>
           </div>
+
+          {booking.paRemark && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Your remark</p>
+              <p className="mt-1 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs italic text-slate-600">
+                &ldquo;{booking.paRemark}&rdquo;
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2.5 border-t border-slate-100 pt-3">
+            <EntityAvatar
+              name={facultyName}
+              fallbackText={facultyName}
+              imageUrl={booking.faculty.photoUrl}
+              className="h-9 w-9"
+            />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-slate-900">{facultyName}</p>
+              <p className="flex items-center gap-1.5 truncate text-xs text-slate-400">
+                <GraduationCap className="h-3.5 w-3.5 shrink-0" /> {booking.department?.name ?? "Faculty"}
+              </p>
+            </div>
+            <a
+              href={`mailto:${booking.faculty.email}`}
+              className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline"
+            >
+              <Mail className="h-3.5 w-3.5" /> Email
+            </a>
+          </div>
+
+          {isBookingOpen && (
+            <div className="flex items-start gap-2 rounded-lg bg-indigo-50/60 px-3 py-2 text-xs leading-relaxed text-indigo-800">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500" />
+              <span>Need to cancel or reschedule? Contact the faculty — only they can change a booking.</span>
+            </div>
+          )}
         </div>
 
-        <a
-          href={`mailto:${booking.faculty.email}`}
-          className="flex items-center gap-1.5 border-t border-slate-200/60 pt-2 text-xs font-medium text-slate-500 transition-colors hover:text-indigo-600"
-        >
-          <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          <span className="truncate">{booking.faculty.email}</span>
-        </a>
-
-        <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
-          <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          <span className="truncate">{booking.department?.name ?? "—"}</span>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" className="cursor-pointer" onClick={onClose}>
+            Close
+          </Button>
+          {onReport && (
+            <Button className="cursor-pointer bg-indigo-600 text-white hover:bg-indigo-700" onClick={onReport}>
+              <ClipboardCheck className="mr-1.5 h-4 w-4" /> Report work
+            </Button>
+          )}
         </div>
-      </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
-      {/* Cancel / reschedule is faculty-driven — tell the PA who to contact */}
-      {isActive && (
-        <div className="mt-3 flex items-start gap-2 rounded-xl bg-indigo-50/60 px-3 py-2.5 text-xs leading-relaxed text-indigo-800">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500" />
-          <span>
-            Need to cancel or reschedule? Contact{" "}
-            <a href={`mailto:${booking.faculty.email}`} className="font-semibold underline underline-offset-2">
-              {facultyName}
-            </a>{" "}
-            — only faculty can change a booking.
-          </span>
+// ---------------------------------------------------------------------------
+// PA self-report dialog — "did you carry out this work?"
+// ---------------------------------------------------------------------------
+
+function PaReportDialog({
+  booking,
+  onClose,
+  onDone,
+}: {
+  booking: Booking
+  onClose: () => void
+  onDone: () => void | Promise<void>
+}) {
+  const [done, setDone] = useState<boolean | null>(booking.paStatus ? booking.paStatus === "DONE" : null)
+  const [remark, setRemark] = useState(booking.paRemark ?? "")
+  const [submitting, setSubmitting] = useState(false)
+
+  async function submit() {
+    if (done === null) return toast.error("Choose whether the work is done.")
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/bookings/${booking.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "PA_REPORT", done, remark: remark.trim() || undefined }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error || `Failed to save (${res.status})`)
+      toast.success("Your update was sent to the faculty.")
+      await onDone()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="bg-white sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-slate-900">Report your work</DialogTitle>
+          <DialogDescription>
+            Let the faculty know whether you carried out this booking. They&apos;ll make the final call
+            on closing it.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setDone(true)}
+            className={cn(
+              "flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 px-3 py-3 text-sm font-medium transition-colors",
+              done === true
+                ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                : "border-slate-200 text-slate-600 hover:border-emerald-300"
+            )}
+          >
+            <CheckCircle2 className="h-5 w-5" />
+            Work done
+          </button>
+          <button
+            type="button"
+            onClick={() => setDone(false)}
+            className={cn(
+              "flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 px-3 py-3 text-sm font-medium transition-colors",
+              done === false
+                ? "border-amber-500 bg-amber-50 text-amber-700"
+                : "border-slate-200 text-slate-600 hover:border-amber-300"
+            )}
+          >
+            <XCircle className="h-5 w-5" />
+            Not done
+          </button>
         </div>
-      )}
-    </article>
+
+        <div>
+          <label htmlFor="pa-remark" className="text-xs font-medium text-slate-600">
+            Remark <span className="text-slate-400">(optional)</span>
+          </label>
+          <textarea
+            id="pa-remark"
+            value={remark}
+            onChange={(e) => setRemark(e.target.value)}
+            rows={3}
+            placeholder="Anything the faculty should know…"
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+          />
+        </div>
+
+        <div className="flex gap-3">
+          <Button variant="outline" className="flex-1 cursor-pointer" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            className="flex-1 cursor-pointer bg-indigo-600 text-white hover:bg-indigo-700"
+            onClick={submit}
+            disabled={submitting}
+          >
+            {submitting ? "Saving…" : "Send update"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

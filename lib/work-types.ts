@@ -6,6 +6,7 @@ export const WORK_TYPES = [
   "Field Work",
   "Documentation",
   "Research Support",
+  "Other",
 ] as const;
 
 export type WorkType = (typeof WORK_TYPES)[number];

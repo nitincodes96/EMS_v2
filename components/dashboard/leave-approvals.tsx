@@ -12,7 +12,7 @@ type PendingLeave = {
   reason: string | null
   startDate: string
   endDate: string
-  user: { id: string; name: string | null; username: string; email: string; role: string }
+  user: { id: string; name: string | null; email: string; role: string }
   department: { id: string; name: string }
 }
 
@@ -76,7 +76,7 @@ export function LeaveApprovals({ title = "Pending approvals" }: { title?: string
             <div key={l.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-slate-900">{l.user.name || l.user.username}</p>
+                  <p className="text-sm font-semibold text-slate-900">{l.user.name || l.user.email}</p>
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-500">
                     {ROLE_LABEL[l.user.role] ?? l.user.role}
                   </span>

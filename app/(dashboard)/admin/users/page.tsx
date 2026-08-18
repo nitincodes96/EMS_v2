@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Loader2, AlertTriangle, Users, UserCheck, UserX, ShieldCheck, MailQuestion } from 'lucide-react'
+import { Plus, Loader2, AlertTriangle, ChevronRight, Users, UserCheck, UserX, ShieldCheck, MailQuestion } from 'lucide-react'
 import { User, Department } from '@/types'
 import { PageHeader } from '@/components/shared/page-header'
 import { SearchInput } from '@/components/shared/search-input'
@@ -31,6 +31,13 @@ import { EntityAvatar } from '@/components/shared/entity-avatar'
 import { toast } from 'react-hot-toast'
 
 const PAGE_SIZE = 8
+
+const ROLE_LABELS: Record<string, string> = {
+  PROJECT_ASSISTANT: 'Project Assistant',
+  FACULTY: 'Faculty',
+  MODERATOR: 'Moderator',
+  ADMIN: 'Admin',
+}
 
 function StatCard({
   icon,
@@ -68,6 +75,9 @@ export default function SuperAdminUsersPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
+  // Set when a department switch was blocked by an active PA booking — lets us
+  // offer a direct link to the bookings that are in the way.
+  const [blockedSwitch, setBlockedSwitch] = useState<{ departmentId: string; paId: string } | null>(null)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [inviteLink, setInviteLink] = useState<string | null>(null)
 
@@ -135,6 +145,7 @@ export default function SuperAdminUsersPage() {
     setPhotoPreview(user.photoUrl || null)
     setInviteLink(null)
     setError('')
+    setBlockedSwitch(null)
     setShowAddDialog(true)
   }
 
@@ -143,6 +154,7 @@ export default function SuperAdminUsersPage() {
     setEditingUser(null)
     resetUserForm()
     setError('')
+    setBlockedSwitch(null)
   }
 
   useEffect(() => {
@@ -264,10 +276,12 @@ export default function SuperAdminUsersPage() {
     e.preventDefault()
     setSubmitting(true)
     setError('')
+    setBlockedSwitch(null)
 
     try {
       const formData = new FormData()
-      formData.append('role', newUser.role)
+      // Role is only set at invite time — it's immutable afterwards.
+      if (!editingUser) formData.append('role', newUser.role)
       if (!isModerator) {
         formData.append('departmentId', newUser.departmentId)
       }
@@ -288,6 +302,7 @@ export default function SuperAdminUsersPage() {
       const data = await response.json()
 
       if (!response.ok) {
+        if (data.blockedBookings) setBlockedSwitch(data.blockedBookings)
         throw new Error(data.error || 'Failed to create user')
       }
 
@@ -358,27 +373,38 @@ export default function SuperAdminUsersPage() {
                   <Label htmlFor="role" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Role
                   </Label>
-                  <Select
-                    value={newUser.role}
-                    onValueChange={(value) =>
-                      value &&
-                      setNewUser((prev) => ({
-                        ...prev,
-                        role: String(value),
-                        departmentId: value === 'MODERATOR' ? '' : prev.departmentId,
-                      }))
-                    }
-                    disabled={submitting}
-                  >
-                    <SelectTrigger className="w-40 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* Faculty aren't invited — they're provisioned on first Kerberos login */}
-                      <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
-                      <SelectItem value="MODERATOR">Moderator</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {/* A role is fixed once the account exists — it decides
+                      department scoping, approval routing and dashboards, so it
+                      is only chosen at invite time. */}
+                  {editingUser ? (
+                    <div className="flex h-9 w-40 items-center rounded-lg border border-slate-200 bg-slate-50 px-3">
+                      <span className="truncate text-sm font-medium text-slate-600">
+                        {ROLE_LABELS[newUser.role] ?? newUser.role}
+                      </span>
+                    </div>
+                  ) : (
+                    <Select
+                      value={newUser.role}
+                      onValueChange={(value) =>
+                        value &&
+                        setNewUser((prev) => ({
+                          ...prev,
+                          role: String(value),
+                          departmentId: value === 'MODERATOR' ? '' : prev.departmentId,
+                        }))
+                      }
+                      disabled={submitting}
+                    >
+                      <SelectTrigger className="w-40 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {/* Faculty aren't invited — they're provisioned on first Kerberos login */}
+                        <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
+                        <SelectItem value="MODERATOR">Moderator</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -512,8 +538,18 @@ export default function SuperAdminUsersPage() {
               </div>
 
               {error && (
-                <div className="rounded-lg border border-red-100 bg-red-50 p-3 text-xs font-semibold text-red-600">
-                  {error}
+                <div className="space-y-2 rounded-lg border border-red-100 bg-red-50 p-3 text-xs font-semibold text-red-600">
+                  <p>{error}</p>
+                  {blockedSwitch && (
+                    <Link
+                      href={`/admin/bookings?departmentId=${blockedSwitch.departmentId}&q=${encodeURIComponent(
+                        newUser.name || newUser.email
+                      )}`}
+                      className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2.5 py-1.5 font-semibold text-red-700 transition-colors hover:bg-red-100"
+                    >
+                      View their bookings <ChevronRight className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
                 </div>
               )}
 

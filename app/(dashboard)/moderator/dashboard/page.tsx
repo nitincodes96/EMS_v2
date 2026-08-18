@@ -22,7 +22,7 @@ type ManagedLeave = {
   status: LeaveStatus
   decisionRemark: string | null
   decidedAt: string | null
-  user: { id: string; name: string | null; username: string; photoUrl: string | null }
+  user: { id: string; name: string | null; email: string | null; photoUrl: string | null }
   department: { id: string; name: string }
 }
 
@@ -179,13 +179,13 @@ export default function ModeratorDashboard() {
                 <div key={leave.id} className="flex items-center gap-3 px-5 py-3.5">
                   <EntityAvatar
                     name={leave.user.name}
-                    fallbackText={leave.user.username}
+                    fallbackText={leave.user.email}
                     imageUrl={leave.user.photoUrl}
                     className="h-9 w-9 shrink-0 border border-slate-200"
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-slate-900">
-                      {leave.user.name || leave.user.username}
+                      {leave.user.name || leave.user.email}
                     </p>
                     <p className="truncate text-xs text-slate-400">
                       {format(new Date(leave.startDate), "MMM d")} –{" "}

@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, RefreshCw, Search, Star } from "lucide-react
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
 import { cn } from "@/lib/utils"
 
@@ -18,15 +19,19 @@ type Booking = {
   workType: string | null
   task: string
   rating: number | null
-  status: "BOOKED" | "COMPLETED" | "ABSENT" | "CANCELLED"
-  faculty: { id: string; name: string | null; username: string; email: string; photoUrl: string | null }
-  pa: { id: string; name: string | null; username: string; email: string; photoUrl: string | null }
+  status: "BOOKED" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
+  createdAt: string
+  faculty: { id: string; name: string | null; email: string; photoUrl: string | null }
+  pa: { id: string; name: string | null; email: string; photoUrl: string | null }
   department: { id: string; name: string } | null
 }
+
+type Department = { id: string; name: string }
 
 const STATUS_STYLES: Record<Booking["status"], string> = {
   BOOKED: "bg-indigo-50 text-indigo-600",
   COMPLETED: "bg-emerald-50 text-emerald-600",
+  INCOMPLETE: "bg-amber-50 text-amber-700",
   ABSENT: "bg-red-50 text-red-600",
   CANCELLED: "bg-slate-100 text-slate-500",
 }
@@ -48,15 +53,36 @@ export default function AdminBookingsPage() {
   const [stats, setStats] = useState({ upcoming: 0, inProgress: 0, completed: 0 })
   const [pagination, setPagination] = useState({ page: 1, total: 0, totalPages: 1 })
   const [filter, setFilter] = useState<FilterKey>("ALL")
+  const [departmentId, setDepartmentId] = useState("all")
+  const [departments, setDepartments] = useState<Department[]>([])
   const [page, setPage] = useState(1)
   const [q, setQ] = useState("")
   const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/departments")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setDepartments(d?.departments ?? []))
+      .catch(() => {})
+  }, [])
+
+  // Honor a ?departmentId=&q= handoff (e.g. from the admin/users department-
+  // switch block) so this page can land pre-filtered on the relevant bookings.
+  // Read after mount so server and client agree on first paint.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const deptParam = params.get("departmentId")
+    const qParam = params.get("q")
+    if (deptParam) setDepartmentId(deptParam)
+    if (qParam) setQ(qParam)
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
       if (filter !== "ALL") params.set("bucket", filter)
+      if (departmentId !== "all") params.set("departmentId", departmentId)
 
       const res = await fetch(`/api/bookings?${params}`)
       const data = await res.json()
@@ -68,11 +94,16 @@ export default function AdminBookingsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, filter])
+  }, [page, filter, departmentId])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  function changeDepartment(next: string) {
+    setDepartmentId(next)
+    setPage(1)
+  }
 
   // Search narrows the current page client-side; the period/bucket filters are server-side.
   const term = q.trim().toLowerCase()
@@ -80,9 +111,9 @@ export default function AdminBookingsPage() {
     ? bookings.filter((b) =>
         [
           b.faculty.name,
-          b.faculty.username,
+          b.faculty.email,
           b.pa.name,
-          b.pa.username,
+          b.pa.email,
           b.department?.name,
           b.workType,
           b.task,
@@ -125,6 +156,24 @@ export default function AdminBookingsPage() {
             className="rounded-lg pl-9"
           />
         </div>
+
+        <Select
+          items={{ all: "All Departments", ...Object.fromEntries(departments.map((d) => [d.id, d.name])) }}
+          value={departmentId}
+          onValueChange={(v) => v && changeDepartment(String(v))}
+        >
+          <SelectTrigger className="w-44 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Departments</SelectItem>
+            {departments.map((d) => (
+              <SelectItem key={d.id} value={d.id}>
+                {d.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
           {FILTERS.map((f) => (
@@ -175,23 +224,24 @@ export default function AdminBookingsPage() {
                     <td className="whitespace-nowrap px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <EntityAvatar
-                          name={b.pa.name || b.pa.username}
-                          fallbackText={b.pa.name || b.pa.username}
+                          name={b.pa.name}
+                          fallbackText={b.pa.email}
                           imageUrl={b.pa.photoUrl}
                           className="h-8 w-8"
                         />
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-slate-900">{b.pa.name || b.pa.username}</p>
+                          <p className="truncate font-medium text-slate-900">{b.pa.name || b.pa.email}</p>
                           <p className="truncate text-xs text-slate-400">{b.pa.email}</p>
                         </div>
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                      {b.faculty.name || b.faculty.username}
+                      {b.faculty.name || b.faculty.email}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">{b.department?.name ?? "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                      {format(new Date(b.date), "MMM d, yyyy")}
+                      <p>{format(new Date(b.date), "MMM d, yyyy")}</p>
+                      <p className="text-xs text-slate-400">Booked {format(new Date(b.createdAt), "MMM d, yyyy")}</p>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                       {format(new Date(b.startTime), "h:mm a")}–{format(new Date(b.endTime), "h:mm a")}

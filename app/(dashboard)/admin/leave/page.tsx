@@ -2,10 +2,19 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { format } from "date-fns"
-import { Check, ChevronLeft, ChevronRight, Plane, RefreshCw, Search, X } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight, Clock3, RefreshCw, Search, ThumbsDown, ThumbsUp, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
 import { cn } from "@/lib/utils"
 
@@ -15,14 +24,13 @@ type Leave = {
   startDate: string
   endDate: string
   days: number
-  status: "APPROVED" | "REJECTED"
+  status: "PENDING" | "APPROVED" | "REJECTED"
   decisionRemark: string | null
   decidedAt: string | null
   createdAt: string
   user: {
     id: string
     name: string | null
-    username: string
     email: string
     role: string
     photoUrl: string | null
@@ -36,14 +44,16 @@ type Department = { id: string; name: string }
 const PAGE_SIZE = 15
 
 const FILTERS = [
-  { key: "all", label: "All" },
+  { key: "PENDING", label: "Pending" },
   { key: "APPROVED", label: "Approved" },
   { key: "REJECTED", label: "Rejected" },
+  { key: "all", label: "All" },
 ] as const
 
 type FilterKey = (typeof FILTERS)[number]["key"]
 
 const STATUS_STYLES: Record<Leave["status"], string> = {
+  PENDING: "bg-amber-50 text-amber-700",
   APPROVED: "bg-emerald-50 text-emerald-600",
   REJECTED: "bg-red-50 text-red-600",
 }
@@ -51,14 +61,19 @@ const STATUS_STYLES: Record<Leave["status"], string> = {
 export default function AdminLeavePage() {
   const [leaves, setLeaves] = useState<Leave[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
-  const [counts, setCounts] = useState({ approved: 0, rejected: 0, all: 0 })
+  const [counts, setCounts] = useState({ pending: 0, approved: 0, rejected: 0, all: 0 })
   const [pagination, setPagination] = useState({ page: 1, total: 0, totalPages: 1 })
 
-  const [status, setStatus] = useState<FilterKey>("all")
+  const [status, setStatus] = useState<FilterKey>("PENDING")
   const [departmentId, setDepartmentId] = useState("all")
   const [q, setQ] = useState("")
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [rejecting, setRejecting] = useState<Leave | null>(null)
+  const [remark, setRemark] = useState("")
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -88,14 +103,33 @@ export default function AdminLeavePage() {
     void load()
   }, [load])
 
+  async function decide(leave: Leave, nextStatus: "APPROVED" | "REJECTED", note?: string) {
+    setBusyId(leave.id)
+    setActionError(null)
+    try {
+      const res = await fetch(`/api/leaves/${leave.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus, remark: note ?? "" }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || "Unable to update this request")
+      await load()
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Unable to update this request")
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Leave</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Decided leave requests across all departments. Read-only — faculty approve their own
-            department&apos;s leave.
+            Approve or reject leave for Faculty and Project Assistants across every department — Project
+            Assistant requests can also be decided by a Moderator.
           </p>
         </div>
         <Button variant="outline" onClick={load} className="cursor-pointer">
@@ -103,24 +137,30 @@ export default function AdminLeavePage() {
         </Button>
       </div>
 
+      {actionError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Stat
-          label="All decided"
-          value={counts.all}
-          icon={<Plane className="h-5 w-5" />}
-          accent="bg-indigo-50 text-indigo-600"
+          label="Pending"
+          value={counts.pending}
+          icon={<Clock3 className="h-5 w-5" />}
+          accent="bg-amber-50 text-amber-600"
         />
         <Stat
           label="Approved"
           value={counts.approved}
-          icon={<Check className="h-5 w-5" />}
+          icon={<ThumbsUp className="h-5 w-5" />}
           accent="bg-emerald-50 text-emerald-600"
         />
         <Stat
           label="Rejected"
           value={counts.rejected}
-          icon={<X className="h-5 w-5" />}
+          icon={<ThumbsDown className="h-5 w-5" />}
           accent="bg-red-50 text-red-600"
         />
       </div>
@@ -135,7 +175,7 @@ export default function AdminLeavePage() {
               setQ(e.target.value)
               setPage(1)
             }}
-            placeholder="Search by name, username or email…"
+            placeholder="Search by name or email…"
             className="rounded-lg pl-9"
           />
         </div>
@@ -178,7 +218,7 @@ export default function AdminLeavePage() {
       {/* Table */}
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-200 text-sm">
+          <table className="w-full min-w-240 text-sm">
             <thead className="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-4 py-3">Requested by</th>
@@ -189,28 +229,35 @@ export default function AdminLeavePage() {
                 <th className="px-4 py-3">Days</th>
                 <th className="px-4 py-3">Decided by</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {leaves.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
-                    {loading ? "Loading leave requests…" : "No decided leave requests match these filters."}
+                  <td colSpan={9} className="px-4 py-10 text-center text-slate-400">
+                    {loading ? "Loading leave requests…" : "No leave requests match these filters."}
                   </td>
                 </tr>
               ) : (
                 leaves.map((l) => (
-                  <tr key={l.id} className="border-b border-slate-50 last:border-0">
+                  <tr
+                    key={l.id}
+                    className={cn(
+                      "border-b border-slate-50 last:border-0",
+                      busyId === l.id && "pointer-events-none opacity-40"
+                    )}
+                  >
                     <td className="whitespace-nowrap px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <EntityAvatar
-                          name={l.user.name || l.user.username}
-                          fallbackText={l.user.name || l.user.username}
+                          name={l.user.name}
+                          fallbackText={l.user.email}
                           imageUrl={l.user.photoUrl}
                           className="h-8 w-8"
                         />
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-slate-900">{l.user.name || l.user.username}</p>
+                          <p className="truncate font-medium text-slate-900">{l.user.name || l.user.email}</p>
                           <p className="truncate text-xs text-slate-400">{l.user.email}</p>
                         </div>
                       </div>
@@ -223,6 +270,9 @@ export default function AdminLeavePage() {
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">{l.department?.name ?? "—"}</td>
                     <td className="max-w-xs px-4 py-3">
                       <p className="truncate text-slate-700">{l.reason || "—"}</p>
+                      {l.decisionRemark && (
+                        <p className="truncate text-xs italic text-slate-400">Remark: {l.decisionRemark}</p>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                       {format(new Date(l.startDate), "MMM d")} – {format(new Date(l.endDate), "MMM d, yyyy")}
@@ -243,10 +293,33 @@ export default function AdminLeavePage() {
                       >
                         {l.status}
                       </span>
-                      {l.decisionRemark && (
-                        <p className="mt-1 max-w-xs truncate text-xs italic text-slate-400">
-                          &ldquo;{l.decisionRemark}&rdquo;
-                        </p>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      {l.status === "PENDING" ? (
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            disabled={busyId === l.id}
+                            onClick={() => decide(l, "APPROVED")}
+                            className="h-7 cursor-pointer bg-emerald-600 text-white hover:bg-emerald-700"
+                          >
+                            <Check className="mr-1 h-3.5 w-3.5" /> Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busyId === l.id}
+                            onClick={() => {
+                              setRemark("")
+                              setRejecting(l)
+                            }}
+                            className="h-7 cursor-pointer text-red-600 hover:bg-red-50"
+                          >
+                            <X className="mr-1 h-3.5 w-3.5" /> Reject
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
                       )}
                     </td>
                   </tr>
@@ -285,6 +358,52 @@ export default function AdminLeavePage() {
           </div>
         )}
       </div>
+
+      {/* A rejection is sent back to the requester, so collect a remark first. */}
+      <Dialog open={!!rejecting} onOpenChange={(open) => !open && setRejecting(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reject leave request</DialogTitle>
+            <DialogDescription>
+              {rejecting
+                ? `${rejecting.user.name || rejecting.user.email} · ${format(
+                    new Date(rejecting.startDate),
+                    "MMM d"
+                  )} – ${format(new Date(rejecting.endDate), "MMM d, yyyy")}`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="px-4 sm:px-6">
+            <label className="text-xs font-medium text-slate-600">Reason for rejection</label>
+            <Textarea
+              value={remark}
+              onChange={(e) => setRemark(e.target.value)}
+              rows={3}
+              placeholder="Shared with the requester (optional)"
+              className="mt-1.5"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" className="cursor-pointer" onClick={() => setRejecting(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="cursor-pointer bg-red-600 text-white hover:bg-red-700"
+              disabled={!!busyId}
+              onClick={async () => {
+                if (!rejecting) return
+                const target = rejecting
+                setRejecting(null)
+                await decide(target, "REJECTED", remark)
+              }}
+            >
+              Reject request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

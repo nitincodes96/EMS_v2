@@ -27,7 +27,7 @@ type AttendanceRow = {
   status: "ON_TIME" | "LATE"
   flaggedOutsideGeofence: boolean
   hasLocation: boolean
-  user: { id: string; name: string | null; username: string; email: string; photoUrl: string | null }
+  user: { id: string; name: string | null; email: string; photoUrl: string | null }
   department: { id: string; name: string }
 }
 
@@ -121,7 +121,7 @@ export default function AdminAttendancePage() {
               setQ(e.target.value)
               setPage(1)
             }}
-            placeholder="Search PA by name, username or email…"
+            placeholder="Search PA by name or email…"
             className="rounded-lg pl-9"
           />
         </div>
@@ -227,13 +227,13 @@ export default function AdminAttendancePage() {
                     <td className="whitespace-nowrap px-5 py-3">
                       <div className="flex items-center gap-2.5">
                         <EntityAvatar
-                          name={r.user.name || r.user.username}
-                          fallbackText={r.user.name || r.user.username}
+                          name={r.user.name}
+                          fallbackText={r.user.email}
                           imageUrl={r.user.photoUrl}
                           className="h-8 w-8"
                         />
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-slate-900">{r.user.name || r.user.username}</p>
+                          <p className="truncate font-medium text-slate-900">{r.user.name || r.user.email}</p>
                           <p className="truncate text-xs text-slate-400">{r.user.email}</p>
                         </div>
                       </div>

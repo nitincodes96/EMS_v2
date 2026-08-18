@@ -68,7 +68,7 @@ const COPY: Record<BookingEvent, { heading: string; subject: string; title: stri
   },
 }
 
-type PersonRef = { id?: string; name?: string | null; username?: string | null; email?: string | null }
+type PersonRef = { id?: string; name?: string | null; email?: string | null }
 
 /**
  * Tells a Project Assistant about a booking on both channels — the dashboard
@@ -91,11 +91,14 @@ export async function notifyPaOfBooking(input: {
   note?: string | null
   /** Previous "date slot" text, shown on a reschedule. */
   previousLabel?: string | null
+  /** True when an admin performed this on the faculty's behalf (override), not the faculty themselves. */
+  actedByAdmin?: boolean
 }) {
   const { heading, subject, title } = COPY[input.event]
   const facultyName = displayName(input.faculty)
   const dayLabel = bookingDayLabel(input.date)
   const slotLabel = bookingSlotLabel(input.startTime, input.endTime)
+  const actor = input.actedByAdmin ? "An admin" : facultyName
 
   const [{ departmentName, locations }, brandName] = await Promise.all([
     loadBookingLocations(input.departmentId),
@@ -107,14 +110,18 @@ export async function notifyPaOfBooking(input: {
       ? `${facultyName} has booked you for the slot below. Here is everything you need for it.`
       : input.event === "RESCHEDULED"
         ? `${facultyName} moved your booking${input.previousLabel ? ` from ${input.previousLabel}` : ""}. The updated details are below.`
-        : `${facultyName} cancelled the booking below. You are free for this slot.`
+        : input.actedByAdmin
+          ? `${actor} cancelled the booking below on ${facultyName}'s behalf. You are free for this slot.`
+          : `${actor} cancelled the booking below. You are free for this slot.`
 
   const message =
     input.event === "CREATED"
-      ? `${facultyName} booked you for ${slotLabel} on ${dayLabel}: ${input.task}`
+      ? `${facultyName} booked you for ${slotLabel} on ${dayLabel}${input.task.trim() ? `: ${input.task}` : ""}`
       : input.event === "RESCHEDULED"
         ? `Your booking${input.previousLabel ? ` moved from ${input.previousLabel}` : " moved"} to ${dayLabel}, ${slotLabel}.${input.note ? ` Note: ${input.note}` : ""}`
-        : `${facultyName} cancelled your ${dayLabel} ${slotLabel} slot.${input.note ? ` Note: ${input.note}` : ""}`
+        : input.actedByAdmin
+          ? `An admin cancelled your ${dayLabel} ${slotLabel} slot (originally booked by ${facultyName}).${input.note ? ` Note: ${input.note}` : ""}`
+          : `${actor} cancelled your ${dayLabel} ${slotLabel} slot.${input.note ? ` Note: ${input.note}` : ""}`
 
   return notifyUser({
     userId: input.pa.id,
@@ -131,6 +138,7 @@ export async function notifyPaOfBooking(input: {
         brandName,
         paName: displayName(input.pa),
         facultyName,
+        cancelledByAdmin: input.event === "CANCELLED" ? input.actedByAdmin : undefined,
         departmentName,
         dateLabel: dayLabel,
         slotLabel,

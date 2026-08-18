@@ -3,20 +3,24 @@ import { format } from "date-fns"
 import prisma from "@/lib/prisma"
 import { getSessionUser } from "@/lib/api-auth"
 import { createNotification } from "@/lib/notifications"
+import { appLink, displayName, mailBrandName, notifyUser } from "@/lib/notify"
 import { notifyPaOfBooking } from "@/lib/booking-notify"
+import { bookingClosedByAdminEmailHtml } from "@/lib/email-templates"
 import { isValidWorkType } from "@/lib/work-types"
+import { formatDuration } from "@/lib/booking-slots"
 import {
+  checkBookingHorizon,
   checkSlotAvailability,
   isWithinChangeWindow,
   hasStarted,
   toBookingDate,
-  BOOKING_CHANGE_CUTOFF_MINUTES,
+  DEFAULT_BOOKING_CHANGE_CUTOFF_MINUTES,
 } from "@/lib/booking-rules"
 
 const BOOKING_INCLUDE = {
-  faculty: { select: { id: true, name: true, username: true, email: true, photoUrl: true } },
-  pa: { select: { id: true, name: true, username: true, email: true, phoneNumber: true, photoUrl: true } },
-  department: { select: { id: true, name: true } },
+  faculty: { select: { id: true, name: true, email: true, photoUrl: true } },
+  pa: { select: { id: true, name: true, email: true, phoneNumber: true, photoUrl: true } },
+  department: { select: { id: true, name: true, bookingChangeCutoffMinutes: true } },
 } as const
 
 function slotLabel(start: Date, end: Date) {
@@ -54,7 +58,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         ...BOOKING_INCLUDE,
         logs: {
           orderBy: { createdAt: "desc" },
-          include: { actor: { select: { id: true, name: true, username: true } } },
+          include: { actor: { select: { id: true, name: true } } },
         },
       },
     })
@@ -66,12 +70,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
+    const cutoffMinutes = booking.department.bookingChangeCutoffMinutes
+
     return NextResponse.json({
       booking,
       rules: {
-        cutoffMinutes: BOOKING_CHANGE_CUTOFF_MINUTES,
+        cutoffMinutes,
         // Computed server-side so the client can't fake an open window
-        canChange: booking.status === "BOOKED" && isWithinChangeWindow(booking.startTime),
+        canChange: booking.status === "BOOKED" && isWithinChangeWindow(booking.startTime, cutoffMinutes),
         // Outcome can only be recorded once the slot has actually begun
         canRecordOutcome: booking.status === "BOOKED" && hasStarted(booking.startTime),
       },
@@ -84,7 +90,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
 // PATCH: status changes (COMPLETED / ABSENT / CANCELLED) or a RESCHEDULE.
 // Cancelling and rescheduling both release the slot, so both are blocked
-// within BOOKING_CHANGE_CUTOFF_MINUTES of the start time.
+// within the department's configured change-cutoff window of the start time.
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser()
   if (!sessionUser) {
@@ -97,9 +103,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Booking not found" }, { status: 404 })
   }
 
-  // Only the booking's faculty or an admin may change it
+  // Backs both the change-cutoff and booking-horizon checks below — fetched
+  // once here since several branches (reschedule, cancel) need it.
+  const department = await prisma.department.findUnique({
+    where: { id: booking.departmentId },
+    select: { bookingHorizonDays: true, bookingChangeCutoffMinutes: true },
+  })
+  const cutoffMinutes = department?.bookingChangeCutoffMinutes ?? DEFAULT_BOOKING_CHANGE_CUTOFF_MINUTES
+
+  // The booking's faculty or an admin may change it; the assigned PA may only
+  // self-report their work (handled as PA_REPORT below).
+  const isAdmin = sessionUser.role === "ADMIN"
   const isOwnerFaculty = sessionUser.role === "FACULTY" && booking.facultyId === sessionUser.id
-  if (sessionUser.role !== "ADMIN" && !isOwnerFaculty) {
+  const isAssignedPa = sessionUser.role === "PROJECT_ASSISTANT" && booking.paId === sessionUser.id
+  if (!isAdmin && !isOwnerFaculty && !isAssignedPa) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -107,6 +124,62 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const body = await request.json()
     const rawRemark = typeof body.remark === "string" ? body.remark.trim() : ""
     const remark = rawRemark ? rawRemark.slice(0, 1000) : null
+
+    // ------------------------------------------------------------ PA report
+    // The assigned PA reports whether they carried out the work. This is
+    // advisory — the faculty still makes the final call on the booking status.
+    if (body.action === "PA_REPORT") {
+      if (!isAssignedPa && !isAdmin) {
+        return NextResponse.json({ error: "Only the assigned PA can report their work" }, { status: 403 })
+      }
+      if (booking.status !== "BOOKED") {
+        return NextResponse.json(
+          { error: `This booking is already ${booking.status.toLowerCase()}` },
+          { status: 409 }
+        )
+      }
+      if (typeof body.done !== "boolean") {
+        return NextResponse.json({ error: "done (true/false) is required" }, { status: 400 })
+      }
+
+      const updated = await prisma.booking.update({
+        where: { id },
+        data: {
+          paStatus: body.done ? "DONE" : "NOT_DONE",
+          paRemark: remark,
+          paMarkedAt: new Date(),
+        },
+        include: BOOKING_INCLUDE,
+      })
+
+      await prisma.bookingLog.create({
+        data: {
+          bookingId: id,
+          action: "PA_REPORTED",
+          actorId: sessionUser.id,
+          message: body.done ? "PA marked the work as done" : "PA marked the work as not done",
+          remark,
+        },
+      })
+
+      await createNotification({
+        userId: booking.facultyId,
+        type: "BOOKING",
+        title: "PA updated their work",
+        message: `The PA marked ${dayLabel(booking.date)} ${slotLabel(
+          booking.startTime,
+          booking.endTime
+        )} as ${body.done ? "done" : "not done"}.${remark ? ` Note: ${remark}` : ""}`,
+        refId: id,
+      })
+
+      return NextResponse.json({ booking: updated })
+    }
+
+    // Everything past this point is faculty/admin only.
+    if (!isOwnerFaculty && !isAdmin) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
 
     // Optional 1–5 star rating of the PA's work
     let rating: number | null = null
@@ -169,10 +242,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           { status: 409 }
         )
       }
-      if (!isWithinChangeWindow(booking.startTime)) {
+      if (!isWithinChangeWindow(booking.startTime, cutoffMinutes)) {
         return NextResponse.json(
           {
-            error: `Bookings can only be rescheduled more than ${BOOKING_CHANGE_CUTOFF_MINUTES} minutes before the start time`,
+            error: `Bookings can only be rescheduled more than ${formatDuration(cutoffMinutes)} before the start time`,
           },
           { status: 409 }
         )
@@ -184,6 +257,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const newDate = toBookingDate(date)
       const newStart = new Date(`${date}T${startTime}`)
       const newEnd = new Date(`${date}T${endTime}`)
+
+      const horizonError = checkBookingHorizon(newDate, department?.bookingHorizonDays ?? 7)
+      if (horizonError) {
+        return NextResponse.json({ error: horizonError.error }, { status: horizonError.status })
+      }
 
       const unavailable = await checkSlotAvailability({
         paId: booking.paId,
@@ -240,8 +318,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     // ------------------------------------------------------------------- status
-    const status = body.status as "COMPLETED" | "ABSENT" | "CANCELLED"
-    if (!["COMPLETED", "ABSENT", "CANCELLED"].includes(status)) {
+    const status = body.status as "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
+    if (!["COMPLETED", "INCOMPLETE", "ABSENT", "CANCELLED"].includes(status)) {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 })
     }
 
@@ -252,21 +330,34 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       )
     }
 
-    // Completed / absent can only be recorded once the slot has begun
-    if ((status === "COMPLETED" || status === "ABSENT") && !hasStarted(booking.startTime)) {
-      return NextResponse.json(
-        { error: "You can only record the outcome once the booking's start time has passed" },
-        { status: 409 }
-      )
-    }
+    // An admin closing a booking is an override — used precisely for the cases
+    // (stuck/forgotten bookings, unblocking a department switch) where the
+    // normal timing rules would otherwise get in the way — so those rules
+    // don't apply to them. A remark is required instead, to keep an audit trail.
+    if (isAdmin) {
+      if (!remark) {
+        return NextResponse.json(
+          { error: "A remark is required when an admin closes a booking" },
+          { status: 400 }
+        )
+      }
+    } else {
+      // Completed / incomplete / absent can only be recorded once the slot has begun
+      if (status !== "CANCELLED" && !hasStarted(booking.startTime)) {
+        return NextResponse.json(
+          { error: "You can only record the outcome once the booking's start time has passed" },
+          { status: 409 }
+        )
+      }
 
-    if (status === "CANCELLED" && !isWithinChangeWindow(booking.startTime)) {
-      return NextResponse.json(
-        {
-          error: `Bookings can only be cancelled more than ${BOOKING_CHANGE_CUTOFF_MINUTES} minutes before the start time`,
-        },
-        { status: 409 }
-      )
+      if (status === "CANCELLED" && !isWithinChangeWindow(booking.startTime, cutoffMinutes)) {
+        return NextResponse.json(
+          {
+            error: `Bookings can only be cancelled more than ${formatDuration(cutoffMinutes)} before the start time`,
+          },
+          { status: 409 }
+        )
+      }
     }
 
     // A rating may accompany marking the booking complete
@@ -281,25 +372,96 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       include: BOOKING_INCLUDE,
     })
 
-    const logAction =
-      status === "CANCELLED" ? "CANCELLED" : status === "COMPLETED" ? "COMPLETED" : "MARKED_ABSENT"
-    const logMessage =
+    const LOG_ACTION_BY_STATUS = {
+      CANCELLED: "CANCELLED",
+      COMPLETED: "COMPLETED",
+      INCOMPLETE: "MARKED_INCOMPLETE",
+      ABSENT: "MARKED_ABSENT",
+    } as const
+    const logAction = LOG_ACTION_BY_STATUS[status]
+    const baseLogMessage =
       status === "CANCELLED"
         ? `Cancelled ${dayLabel(booking.date)} ${slotLabel(booking.startTime, booking.endTime)}`
         : status === "COMPLETED"
           ? `Marked as completed${ratingOnComplete != null ? ` · rated ${ratingOnComplete}/5` : ""}`
-          : "PA marked absent for this slot"
+          : status === "INCOMPLETE"
+            ? "Marked as not completed"
+            : "PA marked absent for this slot"
+    // Flagged distinctly since this bypasses the faculty/PA-facing timing rules.
+    const logMessage = isAdmin ? `[Admin override] ${baseLogMessage}` : baseLogMessage
 
     await prisma.bookingLog.create({
       data: { bookingId: id, action: logAction, actorId: sessionUser.id, message: logMessage, remark },
     })
 
-    if (status === "ABSENT") {
+    // Neither party initiated this, so both need to hear it from us — on the
+    // dashboard and by email, same as every other faculty/PA-facing update.
+    if (isAdmin) {
+      const STATUS_LABEL: Record<typeof status, string> = {
+        COMPLETED: "Completed",
+        INCOMPLETE: "Not completed",
+        ABSENT: "Absent",
+        CANCELLED: "Cancelled",
+      }
+      const statusLabel = STATUS_LABEL[status]
+      const paDisplayName = displayName(updated.pa)
+      const brandName = await mailBrandName()
+
+      await notifyUser({
+        userId: booking.facultyId,
+        type: "BOOKING",
+        title: "An admin closed your booking",
+        message: `Your ${dayLabel(booking.date)} ${slotLabel(booking.startTime, booking.endTime)} booking with ${paDisplayName} was marked ${statusLabel.toLowerCase()} by an admin.${remark ? ` Note: ${remark}` : ""}`,
+        refId: id,
+        email: {
+          to: updated.faculty.email,
+          subject: `Booking ${statusLabel.toLowerCase()} by an admin · ${dayLabel(booking.date)}`,
+          html: bookingClosedByAdminEmailHtml({
+            facultyName: displayName(updated.faculty),
+            paName: paDisplayName,
+            statusLabel,
+            departmentName: updated.department?.name ?? "—",
+            dateLabel: dayLabel(booking.date),
+            slotLabel: slotLabel(booking.startTime, booking.endTime),
+            note: remark,
+            bookingLink: appLink(`/faculty/bookings/${id}`),
+            brandName,
+          }),
+        },
+      })
+    }
+
+    const facultyDisplayName = displayName(updated.faculty)
+    const slot = `${dayLabel(booking.date)} ${slotLabel(booking.startTime, booking.endTime)}`
+
+    if (status === "COMPLETED") {
+      await createNotification({
+        userId: booking.paId,
+        type: "BOOKING",
+        title: "Booking marked completed",
+        message: isAdmin
+          ? `An admin marked your ${slot} booking as completed on ${facultyDisplayName}'s behalf.${ratingOnComplete != null ? ` Rated ${ratingOnComplete}/5.` : ""}${remark ? ` Note: ${remark}` : ""}`
+          : `Your ${slot} booking was marked completed.${ratingOnComplete != null ? ` Rated ${ratingOnComplete}/5.` : ""}${remark ? ` Note: ${remark}` : ""}`,
+        refId: id,
+      })
+    } else if (status === "INCOMPLETE") {
+      await createNotification({
+        userId: booking.paId,
+        type: "BOOKING",
+        title: "Booking marked not completed",
+        message: isAdmin
+          ? `An admin marked your ${slot} slot as not completed on ${facultyDisplayName}'s behalf.${remark ? ` Note: ${remark}` : ""}`
+          : `Your ${slot} slot was marked as not completed.${remark ? ` Note: ${remark}` : ""}`,
+        refId: id,
+      })
+    } else if (status === "ABSENT") {
       await createNotification({
         userId: booking.paId,
         type: "BOOKING",
         title: "Marked absent",
-        message: `You were marked absent for a booked slot.${remark ? ` Note: ${remark}` : ""}`,
+        message: isAdmin
+          ? `An admin marked you absent for the ${slot} slot on ${facultyDisplayName}'s behalf.${remark ? ` Note: ${remark}` : ""}`
+          : `You were marked absent for the ${slot} slot.${remark ? ` Note: ${remark}` : ""}`,
         refId: id,
       })
     } else if (status === "CANCELLED") {
@@ -315,6 +477,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         task: updated.task,
         workType: updated.workType,
         note: remark,
+        actedByAdmin: isAdmin,
       })
     }
 

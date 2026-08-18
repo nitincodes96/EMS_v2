@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Eye,
   Fingerprint,
   LogIn,
   LogOut,
@@ -78,6 +79,7 @@ type DepartmentSummary = {
   shiftStartTime: string
   shiftEndTime: string
   workingDays: string
+  geofenceEnabled: boolean
   holidays: HolidaySummary[]
 }
 
@@ -88,8 +90,8 @@ type Booking = {
   endTime: string
   workType: string | null
   task: string
-  status: "BOOKED" | "COMPLETED" | "ABSENT" | "CANCELLED"
-  faculty: { id: string; name: string | null; username: string; photoUrl: string | null }
+  status: "BOOKED" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
+  faculty: { id: string; name: string | null; email: string; photoUrl: string | null }
   department: { id: string; name: string } | null
 }
 
@@ -98,7 +100,7 @@ type DayKind = "PRESENT" | "LATE" | "ABSENT" | "LEAVE" | "HOLIDAY"
 /** The calendar shows either booked work or attendance history. */
 type CalendarView = "WORK" | "ATTENDANCE"
 
-type WorkKind = "TASK" | "COMPLETED" | "MISSED" | "CANCELLED"
+type WorkKind = "TASK" | "COMPLETED" | "INCOMPLETE" | "MISSED" | "CANCELLED"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -119,6 +121,7 @@ const DOT_STYLES: Record<DayKind, string> = {
 const WORK_DOT_STYLES: Record<WorkKind, string> = {
   TASK: "bg-indigo-500",
   COMPLETED: "bg-emerald-500",
+  INCOMPLETE: "bg-amber-500",
   MISSED: "bg-red-500",
   CANCELLED: "bg-slate-400",
 }
@@ -134,6 +137,7 @@ const ATTENDANCE_LEGEND = [
 const WORK_LEGEND = [
   { label: "Booked", cls: "bg-indigo-500" },
   { label: "Completed", cls: "bg-emerald-500" },
+  { label: "Not completed", cls: "bg-amber-500" },
   { label: "Missed", cls: "bg-red-500" },
   { label: "Cancelled", cls: "bg-slate-400" },
 ] as const
@@ -318,9 +322,11 @@ export default function UserDashboard() {
         ? "TASK"
         : list.some((b) => b.status === "ABSENT")
           ? "MISSED"
-          : list.some((b) => b.status === "COMPLETED")
-            ? "COMPLETED"
-            : "CANCELLED"
+          : list.some((b) => b.status === "INCOMPLETE")
+            ? "INCOMPLETE"
+            : list.some((b) => b.status === "COMPLETED")
+              ? "COMPLETED"
+              : "CANCELLED"
 
       return { kind, label: `${list.length} task${list.length === 1 ? "" : "s"}` }
     },
@@ -367,39 +373,64 @@ export default function UserDashboard() {
 
   // ----------------------------------------------------------------- punch
 
-  async function handlePunch() {
-    if (!navigator.geolocation) {
-      setError("Geolocation is required to punch attendance.")
-      return
-    }
+  async function submitPunch(coords: { latitude: number; longitude: number } | null) {
+    try {
+      const endpoint = isCheckedIn ? "/api/attendance/check-out" : "/api/attendance/check-in"
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(coords ?? {}),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error || "Unable to update attendance")
 
+      await Promise.all([loadCore(), loadMonth()])
+    } catch (punchError) {
+      setError(punchError instanceof Error ? punchError.message : "Unable to update attendance")
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  function handlePunch() {
     setActionLoading(true)
     setError(null)
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const endpoint = isCheckedIn ? "/api/attendance/check-out" : "/api/attendance/check-in"
-          const res = await fetch(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-            }),
-          })
-          const data = await res.json().catch(() => null)
-          if (!res.ok) throw new Error(data?.error || "Unable to update attendance")
+    // Only departments with geofencing switched on actually need a location
+    // fix — everyone else can punch straight away, no permission prompt.
+    if (!department?.geofenceEnabled) {
+      void submitPunch(null)
+      return
+    }
 
-          await Promise.all([loadCore(), loadMonth()])
-        } catch (punchError) {
-          setError(punchError instanceof Error ? punchError.message : "Unable to update attendance")
-        } finally {
-          setActionLoading(false)
-        }
+    if (!window.isSecureContext) {
+      setError(
+        "Location access needs a secure (HTTPS) connection, which this site isn't using right now. Ask your admin to enable HTTPS, or contact IT."
+      )
+      setActionLoading(false)
+      return
+    }
+
+    if (!navigator.geolocation) {
+      setError("This browser doesn't support location access, which this department requires to punch attendance.")
+      setActionLoading(false)
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        void submitPunch({ latitude: position.coords.latitude, longitude: position.coords.longitude })
       },
-      () => {
-        setError("Location permission is required to punch attendance.")
+      (geoError) => {
+        const message =
+          geoError.code === geoError.PERMISSION_DENIED
+            ? "Location permission was denied. Allow location access for this site in your browser settings, then try again."
+            : geoError.code === geoError.POSITION_UNAVAILABLE
+              ? "Could not determine your location. Check that location services are turned on for your device."
+              : geoError.code === geoError.TIMEOUT
+                ? "Getting your location timed out. Please try again."
+                : "Unable to get your location. Please try again."
+        setError(message)
         setActionLoading(false)
       },
       { enableHighAccuracy: true, timeout: 15000 }
@@ -547,15 +578,15 @@ export default function UserDashboard() {
 
                 <div className="mt-auto flex items-center gap-3 border-t border-slate-200/60 pt-3">
                   <EntityAvatar
-                    name={activeBooking.booking.faculty.name || activeBooking.booking.faculty.username}
-                    fallbackText={activeBooking.booking.faculty.name || activeBooking.booking.faculty.username}
+                    name={activeBooking.booking.faculty.name}
+                    fallbackText={activeBooking.booking.faculty.email}
                     imageUrl={activeBooking.booking.faculty.photoUrl}
                     size="sm"
                     className="h-8 w-8"
                   />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-slate-900">
-                      {activeBooking.booking.faculty.name || activeBooking.booking.faculty.username}
+                      {activeBooking.booking.faculty.name || activeBooking.booking.faculty.email}
                     </p>
                     <p className="truncate text-xs text-slate-500">
                       {activeBooking.booking.department?.name ?? "—"}
@@ -759,40 +790,47 @@ export default function UserDashboard() {
             {isWorkView && selectedBookings.length > 0 && (
               <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
                 {selectedBookings.map((booking) => (
-                  <div
-                    key={booking.id}
-                    className="flex items-center gap-3 rounded-xl border border-slate-100 px-3 py-2"
-                  >
-                    <EntityAvatar
-                      name={booking.faculty.name}
-                      fallbackText={booking.faculty.username}
-                      imageUrl={booking.faculty.photoUrl}
-                      className="h-8 w-8 shrink-0 border border-slate-200"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-slate-900">
-                        {booking.workType || booking.task}
-                      </p>
-                      <p className="truncate text-xs text-slate-400">
-                        {booking.faculty.name || booking.faculty.username} ·{" "}
-                        {format(new Date(booking.startTime), "h:mm a")}–
-                        {format(new Date(booking.endTime), "h:mm a")}
-                      </p>
+                  <div key={booking.id} className="rounded-xl border border-slate-100 px-3 py-2">
+                    <div className="flex items-center gap-3">
+                      <EntityAvatar
+                        name={booking.faculty.name}
+                        fallbackText={booking.faculty.email}
+                        imageUrl={booking.faculty.photoUrl}
+                        className="h-8 w-8 shrink-0 border border-slate-200"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-900">
+                          {booking.workType || booking.task}
+                        </p>
+                        <p className="truncate text-xs text-slate-400">
+                          {booking.faculty.name || booking.faculty.email} ·{" "}
+                          {format(new Date(booking.startTime), "h:mm a")}–
+                          {format(new Date(booking.endTime), "h:mm a")}
+                        </p>
+                      </div>
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
+                          booking.status === "COMPLETED"
+                            ? "bg-emerald-50 text-emerald-600"
+                            : booking.status === "INCOMPLETE"
+                              ? "bg-amber-50 text-amber-600"
+                              : booking.status === "ABSENT"
+                                ? "bg-red-50 text-red-600"
+                                : booking.status === "CANCELLED"
+                                  ? "bg-slate-100 text-slate-500"
+                                  : "bg-indigo-50 text-indigo-600"
+                        )}
+                      >
+                        {booking.status}
+                      </span>
                     </div>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase",
-                        booking.status === "COMPLETED"
-                          ? "bg-emerald-50 text-emerald-600"
-                          : booking.status === "ABSENT"
-                            ? "bg-red-50 text-red-600"
-                            : booking.status === "CANCELLED"
-                              ? "bg-slate-100 text-slate-500"
-                              : "bg-indigo-50 text-indigo-600"
-                      )}
+                    <Link
+                      href={`/project-assistant/tasks?bookingId=${booking.id}`}
+                      className="mt-1.5 inline-flex items-center gap-1 pl-11 text-[11px] font-medium text-indigo-600 hover:underline"
                     >
-                      {booking.status}
-                    </span>
+                      <Eye className="h-3 w-3" /> View booking
+                    </Link>
                   </div>
                 ))}
               </div>

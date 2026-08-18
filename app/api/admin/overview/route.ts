@@ -63,8 +63,8 @@ export async function GET(request: Request) {
         endTime: true,
         workType: true,
         status: true,
-        faculty: { select: { name: true, username: true } },
-        pa: { select: { name: true, username: true } },
+        faculty: { select: { name: true } },
+        pa: { select: { name: true } },
         department: { select: { name: true } },
       },
     }),
@@ -81,6 +81,9 @@ export async function GET(request: Request) {
   const activeStaff = users.filter((u) => u.isActive && u.departmentId)
   const paCount = activeStaff.filter((u) => u.role === "PROJECT_ASSISTANT").length
   const facultyCount = activeStaff.filter((u) => u.role === "FACULTY").length
+  // Attendance is punched by Project Assistants only — Faculty never check in,
+  // so counting them as "expected" would permanently understate the rate.
+  const expectedToPunch = paCount
 
   const days = eachDayOfInterval({ start: windowStart, end: todayStart })
 
@@ -91,6 +94,7 @@ export async function GET(request: Request) {
       day: format(day, "EEE"),
       booked: forDay.filter((b) => b.status === "BOOKED").length,
       completed: forDay.filter((b) => b.status === "COMPLETED").length,
+      incomplete: forDay.filter((b) => b.status === "INCOMPLETE").length,
       absent: forDay.filter((b) => b.status === "ABSENT").length,
     }
   })
@@ -110,8 +114,8 @@ export async function GET(request: Request) {
       day: format(day, "EEE"),
       onTime,
       late,
-      // Everyone expected in that day who never punched
-      absent: Math.max(0, activeStaff.length - forDay.length),
+      // PAs expected in that day who never punched
+      absent: Math.max(0, expectedToPunch - forDay.length),
     }
   })
 
@@ -124,9 +128,9 @@ export async function GET(request: Request) {
       facultyCount,
       activeBookings,
       todayPresent: todayAttendanceCount,
-      todayExpected: activeStaff.length,
+      todayExpected: expectedToPunch,
       todayAttendanceRate:
-        activeStaff.length > 0 ? Math.round((todayAttendanceCount / activeStaff.length) * 1000) / 10 : 0,
+        expectedToPunch > 0 ? Math.round((todayAttendanceCount / expectedToPunch) * 1000) / 10 : 0,
     },
     bookingSeries,
     attendanceSeries,
@@ -136,8 +140,8 @@ export async function GET(request: Request) {
       slot: `${format(b.startTime, "h:mm a")} – ${format(b.endTime, "h:mm a")}`,
       workType: b.workType,
       status: b.status,
-      facultyName: b.faculty.name || b.faculty.username,
-      paName: b.pa.name || b.pa.username,
+      facultyName: b.faculty.name,
+      paName: b.pa.name,
       departmentName: b.department.name,
     })),
   })

@@ -76,11 +76,10 @@ export async function mailBrandName(): Promise<string> {
   }
 }
 
-/** Display name for a user record, falling back through username then email. */
+/** Display name for a user record, falling back to email. */
 export function displayName(user: {
   name?: string | null
-  username?: string | null
   email?: string | null
 }): string {
-  return user.name?.trim() || user.username?.trim() || user.email?.trim() || "there"
+  return user.name?.trim() || user.email?.trim() || "there"
 }

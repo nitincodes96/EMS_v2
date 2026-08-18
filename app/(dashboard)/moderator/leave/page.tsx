@@ -38,13 +38,12 @@ type ManagedLeave = {
   user: {
     id: string
     name: string | null
-    username: string
     email: string | null
     role: string
     photoUrl: string | null
   }
   department: { id: string; name: string }
-  approver: { id: string; name: string | null; username: string } | null
+  approver: { id: string; name: string | null } | null
 }
 
 type Summary = { pending: number; approved: number; rejected: number }
@@ -286,17 +285,15 @@ export default function ModeratorLeavePage() {
                       <div className="flex items-center gap-3">
                         <EntityAvatar
                           name={leave.user.name}
-                          fallbackText={leave.user.email || leave.user.username}
+                          fallbackText={leave.user.email}
                           imageUrl={leave.user.photoUrl}
                           className="h-9 w-9 shrink-0 border border-slate-200"
                         />
                         <div className="min-w-0">
                           <p className="truncate font-medium text-slate-900">
-                            {leave.user.name || leave.user.username}
+                            {leave.user.name || leave.user.email}
                           </p>
-                          <p className="truncate text-xs text-slate-400">
-                            {leave.user.email || leave.user.username}
-                          </p>
+                          <p className="truncate text-xs text-slate-400">{leave.user.email}</p>
                         </div>
                       </div>
                     </td>
@@ -388,7 +385,7 @@ export default function ModeratorLeavePage() {
             <DialogTitle>Reject leave request</DialogTitle>
             <DialogDescription>
               {rejecting
-                ? `${rejecting.user.name || rejecting.user.username} · ${format(
+                ? `${rejecting.user.name || rejecting.user.email} · ${format(
                     new Date(rejecting.startDate),
                     "MMM d"
                   )} – ${format(new Date(rejecting.endDate), "MMM d, yyyy")}`

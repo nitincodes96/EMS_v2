@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   addMonths,
@@ -20,9 +21,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  Eye,
   PartyPopper,
   Plane,
   UserX,
+  XCircle,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -31,7 +34,7 @@ import { cn } from "@/lib/utils"
 // Types
 // ---------------------------------------------------------------------------
 
-type EntryType = "TASK" | "COMPLETED" | "ABSENT" | "CANCELLED" | "LEAVE" | "HOLIDAY"
+type EntryType = "TASK" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED" | "LEAVE" | "HOLIDAY"
 
 type DayEntry = {
   id: string
@@ -48,8 +51,8 @@ type Booking = {
   endTime: string
   workType: string | null
   task: string
-  status: "BOOKED" | "COMPLETED" | "ABSENT" | "CANCELLED"
-  faculty: { name: string | null; username: string }
+  status: "BOOKED" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
+  faculty: { name: string | null; email: string }
 }
 
 type Leave = {
@@ -65,6 +68,7 @@ type Holiday = { id: string; name: string; date: string; type: string }
 const TYPE_CHIP: Record<EntryType, string> = {
   TASK: "bg-indigo-50 text-indigo-700",
   COMPLETED: "bg-emerald-50 text-emerald-700",
+  INCOMPLETE: "bg-orange-50 text-orange-700",
   ABSENT: "bg-red-50 text-red-700",
   CANCELLED: "bg-slate-100 text-slate-500",
   LEAVE: "bg-violet-50 text-violet-700",
@@ -72,6 +76,15 @@ const TYPE_CHIP: Record<EntryType, string> = {
 }
 
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+
+/** Every entry type except leave/holiday is backed by a real booking. */
+const BOOKING_ENTRY_TYPES: ReadonlySet<EntryType> = new Set([
+  "TASK",
+  "COMPLETED",
+  "INCOMPLETE",
+  "ABSENT",
+  "CANCELLED",
+])
 
 const dayKey = (d: Date) => format(d, "yyyy-MM-dd")
 
@@ -164,16 +177,18 @@ export default function CalendarPage() {
       const type: EntryType =
         b.status === "COMPLETED"
           ? "COMPLETED"
-          : b.status === "ABSENT"
-            ? "ABSENT"
-            : b.status === "CANCELLED"
-              ? "CANCELLED"
-              : "TASK"
+          : b.status === "INCOMPLETE"
+            ? "INCOMPLETE"
+            : b.status === "ABSENT"
+              ? "ABSENT"
+              : b.status === "CANCELLED"
+                ? "CANCELLED"
+                : "TASK"
       push(dayKey(new Date(b.date)), {
         id: b.id,
         time: format(new Date(b.startTime), "h:mm a"),
         title: b.workType ?? "Assigned task",
-        subtitle: `${b.faculty.name || b.faculty.username} · ${format(new Date(b.startTime), "h:mm a")}–${format(
+        subtitle: `${b.faculty.name || b.faculty.email} · ${format(new Date(b.startTime), "h:mm a")}–${format(
           new Date(b.endTime),
           "h:mm a"
         )}`,
@@ -346,6 +361,14 @@ export default function CalendarPage() {
                         </div>
                         <EntryIcon type={entry.type} />
                       </div>
+                      {BOOKING_ENTRY_TYPES.has(entry.type) && (
+                        <Link
+                          href={`/project-assistant/tasks?bookingId=${entry.id}`}
+                          className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:underline"
+                        >
+                          <Eye className="h-3 w-3" /> View booking
+                        </Link>
+                      )}
                     </div>
                   ))
                 )}
@@ -361,6 +384,7 @@ export default function CalendarPage() {
 function EntryIcon({ type }: { type: EntryType }) {
   const cls = "h-4 w-4 shrink-0"
   if (type === "COMPLETED") return <CheckCircle2 className={cn(cls, "text-emerald-500")} />
+  if (type === "INCOMPLETE") return <XCircle className={cn(cls, "text-orange-500")} />
   if (type === "ABSENT") return <UserX className={cn(cls, "text-red-500")} />
   if (type === "CANCELLED") return <Ban className={cn(cls, "text-slate-400")} />
   if (type === "LEAVE") return <Plane className={cn(cls, "text-violet-500")} />

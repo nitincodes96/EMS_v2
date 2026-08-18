@@ -13,12 +13,17 @@ export function TablePagination({
   pageSize,
   total,
   onPageChange,
+  pageSizeOptions,
+  onPageSizeChange,
   className,
 }: {
   page: number
   pageSize: number
   total: number
   onPageChange: (page: number) => void
+  /** Pass alongside onPageSizeChange to show a "rows per page" selector. */
+  pageSizeOptions?: number[]
+  onPageSizeChange?: (pageSize: number) => void
   className?: string
 }) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
@@ -38,17 +43,36 @@ export function TablePagination({
         className
       )}
     >
-      <p className="text-xs text-slate-500">
-        {total === 0 ? (
-          "No records"
-        ) : (
-          <>
-            Showing <span className="font-medium text-slate-700">{first}</span>–
-            <span className="font-medium text-slate-700">{last}</span> of{" "}
-            <span className="font-medium text-slate-700">{total}</span>
-          </>
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-xs text-slate-500">
+          {total === 0 ? (
+            "No records"
+          ) : (
+            <>
+              Showing <span className="font-medium text-slate-700">{first}</span>–
+              <span className="font-medium text-slate-700">{last}</span> of{" "}
+              <span className="font-medium text-slate-700">{total}</span>
+            </>
+          )}
+        </p>
+
+        {pageSizeOptions && onPageSizeChange && (
+          <label className="flex items-center gap-1.5 text-xs text-slate-500">
+            Rows per page
+            <select
+              value={pageSize}
+              onChange={(e) => onPageSizeChange(Number(e.target.value))}
+              className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 outline-none focus:border-indigo-400"
+            >
+              {pageSizeOptions.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
-      </p>
+      </div>
 
       <div className="flex items-center gap-1">
         <PageButton

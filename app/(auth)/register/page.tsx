@@ -59,11 +59,11 @@ type OrganizationValues = z.infer<typeof organizationSchema>;
 
 const accountSchema = z
   .object({
-    username: z
+    name: z
       .string()
-      .min(3, "Username must be at least 3 characters")
-      .max(30, "Username is too long")
-      .regex(/^[a-zA-Z0-9_. ]+$/, "Only letters, numbers, spaces, . and _ are allowed"),
+      .min(2, "Name must be at least 2 characters")
+      .max(60, "Name is too long")
+      .regex(/^[a-zA-Z' .-]+$/, "Only letters, spaces, apostrophes, periods and hyphens are allowed"),
     email: z.string().email("Invalid email address"),
     password: passwordFieldSchema,
     confirmPassword: z.string(),
@@ -101,7 +101,7 @@ export default function RegisterPage() {
   const accountForm = useForm<AccountValues>({
     resolver: zodResolver(accountSchema),
     defaultValues: {
-      username: "",
+      name: "",
       email: "",
       password: "",
       confirmPassword: "",
@@ -162,7 +162,7 @@ export default function RegisterPage() {
       const payload = {
         organizationName: existing.organizationName,
         logoBase64: existing.logoPreview,
-        username: values.username,
+        name: values.name,
         email: values.email,
         password: values.password,
       };
@@ -189,7 +189,7 @@ export default function RegisterPage() {
         DRAFT_KEY,
         JSON.stringify({
           ...existing,
-          username: values.username,
+          name: values.name,
           email: values.email,
           password: values.password,
         })
@@ -447,16 +447,16 @@ export default function RegisterPage() {
                 onSubmit={accountForm.handleSubmit(handleAccountSubmit)}
               >
                 <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
+                  <Label htmlFor="name">Full name</Label>
                   <Input
-                    id="username"
-                    placeholder="Enter Username"
+                    id="name"
+                    placeholder="Enter your full name"
                     autoFocus
-                    {...accountForm.register("username")}
+                    {...accountForm.register("name")}
                   />
-                  {accountForm.formState.errors.username && (
+                  {accountForm.formState.errors.name && (
                     <p className="text-xs text-red-500">
-                      {accountForm.formState.errors.username.message}
+                      {accountForm.formState.errors.name.message}
                     </p>
                   )}
                 </div>

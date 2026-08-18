@@ -5,20 +5,21 @@ import prisma from "@/lib/prisma"
 import type { SessionUser } from "@/lib/api-auth"
 
 /**
- * Who decides a leave request, keyed by the role of whoever applied.
+ * Who may decide a leave request, keyed by the role of whoever applied.
  *
- * Project Assistant leave is a Moderator's call and nobody else's — Faculty
- * raise the bookings, so keeping them out of the approval path stops a faculty
- * member from clearing (or blocking) their own PA's day. Faculty leave stays
- * with an Admin. Anything else has no defined route.
+ * Project Assistant leave is a Moderator's call day-to-day — Faculty raise the
+ * bookings, so keeping them out of the approval path stops a faculty member
+ * from clearing (or blocking) their own PA's day. An Admin can also decide it,
+ * as an org-wide override alongside the Moderator. Faculty leave stays with
+ * an Admin. Anything else has no defined route.
  */
-const APPROVER_ROLE: Partial<Record<Role, Role>> = {
-  PROJECT_ASSISTANT: "MODERATOR",
-  FACULTY: "ADMIN",
+const APPROVER_ROLES: Partial<Record<Role, Role[]>> = {
+  PROJECT_ASSISTANT: ["MODERATOR", "ADMIN"],
+  FACULTY: ["ADMIN"],
 }
 
-export function approverRoleFor(requesterRole: Role): Role | undefined {
-  return APPROVER_ROLE[requesterRole]
+export function approverRolesFor(requesterRole: Role): Role[] {
+  return APPROVER_ROLES[requesterRole] ?? []
 }
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -40,14 +41,14 @@ export function checkLeaveDecisionAccess(
   sessionUser: SessionUser,
   leave: { user: { role: Role } }
 ): { error: string; status: number } | null {
-  const required = approverRoleFor(leave.user.role)
+  const allowed = approverRolesFor(leave.user.role)
 
-  if (!required) {
+  if (allowed.length === 0) {
     return { error: `${roleLabel(leave.user.role)} leave requests are not managed here`, status: 403 }
   }
-  if (sessionUser.role !== required) {
+  if (!allowed.includes(sessionUser.role as Role)) {
     return {
-      error: `Only a ${roleLabel(required)} can approve or reject ${roleLabel(leave.user.role)} leave requests`,
+      error: `Only ${allowed.map(roleLabel).join(" or an ")} can approve or reject ${roleLabel(leave.user.role)} leave requests`,
       status: 403,
     }
   }
@@ -56,15 +57,16 @@ export function checkLeaveDecisionAccess(
 
 /**
  * The people who should be told about a new leave request. Moderators work
- * organization-wide, so PA requests reach every moderator; admins likewise.
+ * organization-wide, so PA requests reach every moderator (and now every
+ * admin too, since either may decide it); Faculty requests reach every admin.
  */
 export async function findLeaveApprovers(requesterRole: Role) {
-  const role = approverRoleFor(requesterRole)
-  if (!role) return []
+  const roles = approverRolesFor(requesterRole)
+  if (roles.length === 0) return []
 
   return prisma.user.findMany({
-    where: { role, isActive: true },
-    select: { id: true, name: true, username: true, email: true },
+    where: { role: { in: roles }, isActive: true },
+    select: { id: true, name: true, email: true, role: true },
   })
 }
 

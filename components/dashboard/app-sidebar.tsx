@@ -46,7 +46,7 @@ const NAV_ITEMS = {
     { title: "Dashboard", url: "/faculty/dashboard", icon: LayoutDashboard },
     { title: "Book a PA", url: "/faculty/book-pa", icon: CalendarPlus },
     { title: "Bookings", url: "/faculty/bookings", icon: ClipboardList },
-    { title: "Team", url: "/faculty/team", icon: Users },
+    // { title: "Team", url: "/faculty/team", icon: Users },
     { title: "Settings", url: "/faculty/settings", icon: Settings },
   ],
 
@@ -63,7 +63,7 @@ const NAV_ITEMS = {
     { title: "Calendar", url: "/project-assistant/calendar", icon: CalendarPlus2 },
     { title: "Attendance", url: "/project-assistant/attendance", icon: Watch },
     { title: "Leave", url: "/project-assistant/leave", icon: Calendar },
-    { title: "Team", url: "/project-assistant/team", icon: Users },
+    // { title: "Team", url: "/project-assistant/team", icon: Users },
     { title: "Settings", url: "/project-assistant/settings", icon: Settings },
   ],
 } as const;

@@ -5,11 +5,13 @@ import { useParams } from "next/navigation"
 import Link from "next/link"
 import { format, differenceInMinutes } from "date-fns"
 import {
+  AlertTriangle,
   ArrowLeft,
   Building2,
   CalendarClock,
   CalendarDays,
   Check,
+  ClipboardCheck,
   ClipboardList,
   Clock,
   FileText,
@@ -35,10 +37,27 @@ import {
 } from "@/components/ui/dialog"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
 import { WORK_TYPES } from "@/lib/work-types"
-import { buildHourlySlots, minutesToHHMM, minutesToLabel, parseHHMM, type Slot } from "@/lib/booking-slots"
+import {
+  buildSlots,
+  DEFAULT_SLOT_MINUTES,
+  formatDuration,
+  minutesToHHMM,
+  minutesToLabel,
+  parseHHMM,
+  slotRangeLabel,
+  type Slot,
+} from "@/lib/booking-slots"
 import { cn } from "@/lib/utils"
 
-type LogAction = "CREATED" | "RESCHEDULED" | "CANCELLED" | "COMPLETED" | "MARKED_ABSENT" | "RATED"
+type LogAction =
+  | "CREATED"
+  | "RESCHEDULED"
+  | "CANCELLED"
+  | "COMPLETED"
+  | "MARKED_ABSENT"
+  | "MARKED_INCOMPLETE"
+  | "RATED"
+  | "PA_REPORTED"
 
 type BookingLog = {
   id: string
@@ -46,7 +65,7 @@ type BookingLog = {
   message: string
   remark: string | null
   createdAt: string
-  actor: { id: string; name: string | null; username: string } | null
+  actor: { id: string; name: string | null } | null
 }
 
 type BookingDetail = {
@@ -56,36 +75,41 @@ type BookingDetail = {
   endTime: string
   workType: string | null
   task: string
-  status: "BOOKED" | "COMPLETED" | "ABSENT" | "CANCELLED"
+  status: "BOOKED" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
   rating: number | null
   ratedAt: string | null
+  paStatus: "DONE" | "NOT_DONE" | null
+  paRemark: string | null
+  paMarkedAt: string | null
   createdAt: string
   updatedAt: string
   pa: {
     id: string
     name: string | null
-    username: string
     email: string
     phoneNumber: string | null
     photoUrl: string | null
   }
-  faculty: { id: string; name: string | null; username: string; email: string }
+  faculty: { id: string; name: string | null; email: string }
   department: { id: string; name: string } | null
   logs: BookingLog[]
 }
 
 type SlotsResponse = {
   bookingWindow: { start: string; end: string; enabled: boolean }
+  slotDurationMinutes: number
+  lunch: { start: string | null; end: string | null }
   dayUnavailable: boolean
   dayUnavailableReason: string | null
   booked: { id: string; start: string; end: string; status: string }[]
 }
 
-type OutcomeStatus = "COMPLETED" | "ABSENT" | "CANCELLED"
+type OutcomeStatus = "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
 
 const STATUS_STYLES: Record<BookingDetail["status"], string> = {
   BOOKED: "bg-indigo-50 text-indigo-700 ring-indigo-200",
   COMPLETED: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  INCOMPLETE: "bg-amber-50 text-amber-700 ring-amber-200",
   ABSENT: "bg-red-50 text-red-700 ring-red-200",
   CANCELLED: "bg-slate-100 text-slate-500 ring-slate-200",
 }
@@ -96,7 +120,9 @@ const LOG_STYLES: Record<LogAction, string> = {
   CANCELLED: "bg-slate-100 text-slate-500",
   COMPLETED: "bg-emerald-50 text-emerald-600",
   MARKED_ABSENT: "bg-red-50 text-red-600",
+  MARKED_INCOMPLETE: "bg-amber-50 text-amber-700",
   RATED: "bg-yellow-50 text-yellow-700",
+  PA_REPORTED: "bg-sky-50 text-sky-700",
 }
 
 const LOG_LABELS: Record<LogAction, string> = {
@@ -105,7 +131,9 @@ const LOG_LABELS: Record<LogAction, string> = {
   CANCELLED: "Cancelled",
   COMPLETED: "Completed",
   MARKED_ABSENT: "Marked absent",
+  MARKED_INCOMPLETE: "Marked not completed",
   RATED: "Rated",
+  PA_REPORTED: "PA update",
 }
 
 const OUTCOME_COPY: Record<
@@ -117,6 +145,13 @@ const OUTCOME_COPY: Record<
     description: "Confirm the PA carried out this slot. Add an optional remark for the record.",
     confirm: "Mark completed",
     tone: "bg-emerald-600 hover:bg-emerald-700",
+  },
+  INCOMPLETE: {
+    title: "Mark booking as not completed",
+    description:
+      "The PA was present but the work wasn't finished. Add an optional remark — it's shared with them.",
+    confirm: "Mark not completed",
+    tone: "bg-amber-600 hover:bg-amber-700",
   },
   ABSENT: {
     title: "Mark PA absent",
@@ -242,7 +277,9 @@ export default function BookingDetailPage() {
           ? "Booking cancelled."
           : status === "COMPLETED"
             ? "Marked completed."
-            : "PA marked absent."
+            : status === "INCOMPLETE"
+              ? "Marked not completed."
+              : "PA marked absent."
       )
       setOutcome(null)
       await load()
@@ -309,14 +346,14 @@ export default function BookingDetailPage() {
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-wrap items-center gap-4 p-5">
               <EntityAvatar
-                name={booking.pa.name || booking.pa.username}
-                fallbackText={booking.pa.name || booking.pa.username}
+                name={booking.pa.name}
+                fallbackText={booking.pa.email}
                 imageUrl={booking.pa.photoUrl}
                 className="h-14 w-14"
               />
               <div className="min-w-0 flex-1">
                 <h1 className="truncate text-xl font-semibold tracking-tight text-slate-900">
-                  {booking.pa.name || booking.pa.username}
+                  {booking.pa.name || booking.pa.email}
                 </h1>
                 <p className="truncate text-sm text-slate-500">{booking.pa.email}</p>
                 {booking.pa.phoneNumber && (
@@ -365,7 +402,7 @@ export default function BookingDetailPage() {
               <Detail
                 icon={<UserRound className="h-3.5 w-3.5" />}
                 label="Booked by"
-                value={booking.faculty.name || booking.faculty.username}
+                value={booking.faculty.name || booking.faculty.email}
                 hint={booking.faculty.email}
               />
               <Detail
@@ -389,7 +426,52 @@ export default function BookingDetailPage() {
 
             <div className="border-t border-slate-100 px-5 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Description</p>
-              <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{booking.task}</p>
+              <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                {booking.task?.trim() ? booking.task : <span className="text-slate-400">No description provided.</span>}
+              </p>
+            </div>
+          </div>
+
+          {/* PA's report */}
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3.5">
+              <ClipboardCheck className="h-4 w-4 text-indigo-500" />
+              <h2 className="text-sm font-semibold text-slate-900">PA&apos;s report</h2>
+            </div>
+            <div className="px-5 py-4">
+              {booking.paStatus ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase",
+                        booking.paStatus === "DONE"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-amber-50 text-amber-700"
+                      )}
+                    >
+                      {booking.paStatus === "DONE" ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        <X className="h-3.5 w-3.5" />
+                      )}
+                      {booking.paStatus === "DONE" ? "Marked done" : "Marked not done"}
+                    </span>
+                    {booking.paMarkedAt && (
+                      <span className="text-xs text-slate-400">
+                        {format(new Date(booking.paMarkedAt), "MMM d, yyyy 'at' h:mm a")}
+                      </span>
+                    )}
+                  </div>
+                  {booking.paRemark && (
+                    <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm italic text-slate-600">
+                      &ldquo;{booking.paRemark}&rdquo;
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-slate-400">The PA hasn&apos;t reported on this work yet.</p>
+              )}
             </div>
           </div>
 
@@ -425,7 +507,7 @@ export default function BookingDetailPage() {
                         </p>
                       )}
                       <p className="mt-1 text-[11px] text-slate-400">
-                        {log.actor ? log.actor.name || log.actor.username : "System"} ·{" "}
+                        {log.actor ? log.actor.name || "System" : "System"} ·{" "}
                         {format(new Date(log.createdAt), "MMM d, yyyy 'at' h:mm a")}
                       </p>
                     </div>
@@ -490,6 +572,14 @@ export default function BookingDetailPage() {
                   <Button
                     variant="outline"
                     disabled={busy || !canRecordOutcome}
+                    onClick={() => setOutcome("INCOMPLETE")}
+                    className="w-full cursor-pointer justify-start text-amber-700 hover:bg-amber-50"
+                  >
+                    <AlertTriangle className="mr-2 h-4 w-4" /> Mark not completed
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={busy || !canRecordOutcome}
                     onClick={() => setOutcome("ABSENT")}
                     className="w-full cursor-pointer justify-start text-red-600 hover:bg-red-50"
                   >
@@ -537,11 +627,11 @@ export default function BookingDetailPage() {
                     {canChange ? (
                       <span>
                         Can be cancelled or rescheduled until{" "}
-                        <strong className="font-semibold">1 hour before</strong> the start time.
+                        <strong className="font-semibold">{formatDuration(cutoffMinutes)} before</strong> the start time.
                       </span>
                     ) : (
                       <span>
-                        Cancellation window closed — under {cutoffMinutes} minutes to start time.
+                        Cancellation window closed — under {formatDuration(cutoffMinutes)} to start time.
                       </span>
                     )}
                   </div>
@@ -556,6 +646,7 @@ export default function BookingDetailPage() {
       {outcome && (
         <OutcomeDialog
           status={outcome}
+          paStatus={booking.paStatus}
           busy={busy}
           onClose={() => setOutcome(null)}
           onConfirm={(remark, rating) => submitOutcome(outcome, remark, rating)}
@@ -564,7 +655,7 @@ export default function BookingDetailPage() {
 
       {ratingOpen && (
         <RatingDialog
-          paName={booking.pa.name || booking.pa.username}
+          paName={booking.pa.name || booking.pa.email}
           initialRating={booking.rating ?? 0}
           busy={busy}
           onClose={() => setRatingOpen(false)}
@@ -626,11 +717,13 @@ function Detail({
 
 function OutcomeDialog({
   status,
+  paStatus,
   busy,
   onClose,
   onConfirm,
 }: {
   status: OutcomeStatus
+  paStatus: "DONE" | "NOT_DONE" | null
   busy: boolean
   onClose: () => void
   onConfirm: (remark: string, rating?: number) => void
@@ -646,6 +739,36 @@ function OutcomeDialog({
           <DialogTitle className="text-slate-900">{copy.title}</DialogTitle>
           <DialogDescription>{copy.description}</DialogDescription>
         </DialogHeader>
+
+        {status === "COMPLETED" && paStatus === null && (
+          <div className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-800">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+            <span>
+              The PA hasn&apos;t marked this work as done yet. You can still complete it — this is just a
+              heads-up.
+            </span>
+          </div>
+        )}
+
+        {status === "COMPLETED" && paStatus === "NOT_DONE" && (
+          <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-xs leading-relaxed text-red-800">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
+            <span>
+              The PA reported this work as <strong>not done</strong>. You can still mark it completed if
+              you&apos;re satisfied it&apos;s finished — double check with them first.
+            </span>
+          </div>
+        )}
+
+        {status === "INCOMPLETE" && paStatus === "DONE" && (
+          <div className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-800">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+            <span>
+              The PA reported this work as <strong>done</strong>. You can still mark it not completed if
+              something&apos;s missing — it&apos;s worth confirming with them first.
+            </span>
+          </div>
+        )}
 
         {status === "COMPLETED" && (
           <div>
@@ -801,7 +924,10 @@ function RescheduleDialog({
   }, [load])
 
   const slots = useMemo<Slot[]>(
-    () => (data ? buildHourlySlots(data.bookingWindow.start, data.bookingWindow.end) : []),
+    () =>
+      data
+        ? buildSlots(data.bookingWindow.start, data.bookingWindow.end, data.lunch, data.slotDurationMinutes)
+        : [],
     [data]
   )
 
@@ -900,7 +1026,7 @@ function RescheduleDialog({
         <DialogHeader>
           <DialogTitle className="text-slate-900">Reschedule booking</DialogTitle>
           <DialogDescription>
-            Pick a new day and continuous slots for {booking.pa.name || booking.pa.username}. The current
+            Pick a new day and continuous slots for {booking.pa.name || booking.pa.email}. The current
             slot is shown as free.
           </DialogDescription>
         </DialogHeader>
@@ -933,10 +1059,13 @@ function RescheduleDialog({
                 {data?.dayUnavailableReason || "PA is unavailable on this day."}
               </div>
             ) : slots.length === 0 ? (
-              <p className="py-6 text-center text-sm text-slate-400">No bookable hours in the window.</p>
+              <p className="py-6 text-center text-sm text-slate-400">No bookable slots in the window.</p>
             ) : (
               <>
-                <div className="mt-1.5 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                <p className="mt-1.5 text-[11px] text-slate-400">
+                  Each slot is {formatDuration(data?.slotDurationMinutes ?? DEFAULT_SLOT_MINUTES)}.
+                </p>
+                <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {slots.map((slot, i) => {
                     const state = slotState(slot)
                     const isSel = selected.includes(i)
@@ -951,7 +1080,7 @@ function RescheduleDialog({
                           state === "booked" ? "Already booked" : state === "past" ? "Time has passed" : undefined
                         }
                         className={cn(
-                          "rounded-lg border px-2 py-2 text-xs font-medium transition-colors",
+                          "whitespace-nowrap rounded-lg border px-2 py-2 text-[11px] font-medium transition-colors",
                           isSel
                             ? "border-indigo-600 bg-indigo-600 text-white"
                             : disabled
@@ -959,15 +1088,15 @@ function RescheduleDialog({
                               : "cursor-pointer border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50"
                         )}
                       >
-                        {minutesToLabel(slot.startMin)}
+                        {slotRangeLabel(slot.startMin, slot.endMin)}
                       </button>
                     )
                   })}
                 </div>
                 {hasSelection && selStart != null && selEnd != null && (
                   <p className="mt-2.5 rounded-lg bg-indigo-50 px-3 py-2 text-xs font-medium text-indigo-700">
-                    New slot: {minutesToLabel(selStart)} – {minutesToLabel(selEnd)} ({selected.length} hr
-                    {selected.length > 1 ? "s" : ""})
+                    New slot: {minutesToLabel(selStart)} – {minutesToLabel(selEnd)} (
+                    {formatDuration(selEnd - selStart)})
                   </p>
                 )}
               </>

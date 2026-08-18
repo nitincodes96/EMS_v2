@@ -55,7 +55,6 @@ export async function GET(request: Request) {
         ? {
             OR: [
               { name: { contains: q } },
-              { username: { contains: q } },
               { email: { contains: q } },
             ],
           }
@@ -80,7 +79,7 @@ export async function GET(request: Request) {
         checkInLongitude: true,
         flaggedOutsideGeofence: true,
         departmentId: true,
-        user: { select: { id: true, name: true, username: true, email: true, photoUrl: true } },
+        user: { select: { id: true, name: true, email: true, photoUrl: true } },
         department: { select: { id: true, name: true, shiftStartTime: true, lateGraceMinutes: true } },
       },
     }),

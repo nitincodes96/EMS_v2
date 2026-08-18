@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -122,6 +122,13 @@ interface DepartmentDetails {
 
 type SidebarTab = 'activity' | 'leaves' | 'holidays'
 
+const ROLE_LABELS: Record<string, string> = {
+  PROJECT_ASSISTANT: 'Project Assistant',
+  FACULTY: 'Faculty',
+  MODERATOR: 'Moderator',
+  ADMIN: 'Admin',
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function DepartmentDetailsPage() {
@@ -137,16 +144,9 @@ export default function DepartmentDetailsPage() {
   // ── Add User state ──
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [newUser, setNewUser] = useState({
-    email: '',
-    name: '',
-    phoneNumber: '',
-    empCode: '',
-    role: 'PROJECT_ASSISTANT',
-  })
+  const [newUser, setNewUser] = useState({ email: '', name: '', phoneNumber: '' })
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
-  const [inviteLink, setInviteLink] = useState<string | null>(null)
 
   // ── Staff management state ──
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
@@ -158,7 +158,6 @@ export default function DepartmentDetailsPage() {
   const [editingMember, setEditingMember] = useState<User | null>(null)
   const [editFormData, setEditFormData] = useState({
     name: '',
-    empCode: '',
     phoneNumber: '',
   })
   const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null)
@@ -234,18 +233,15 @@ export default function DepartmentDetailsPage() {
     if (!org) return
     setSubmitting(true)
     setError('')
-    setInviteLink(null)
     try {
       const formData = new FormData()
-      formData.append('role', newUser.role)
+      // Only Project Assistants are invited here — Faculty arrive via Kerberos,
+      // and Moderators are org-wide so they aren't tied to a department.
+      formData.append('role', 'PROJECT_ASSISTANT')
       formData.append('departmentId', org.id)
-      if (newUser.role === 'FACULTY') {
-        formData.append('empCode', newUser.empCode)
-      } else {
-        formData.append('email', newUser.email)
-        formData.append('name', newUser.name)
-        formData.append('phoneNumber', newUser.phoneNumber)
-      }
+      formData.append('email', newUser.email)
+      formData.append('name', newUser.name)
+      formData.append('phoneNumber', newUser.phoneNumber)
       if (photoFile) formData.append('photo', photoFile)
 
       const response = await fetch('/api/users', {
@@ -254,20 +250,10 @@ export default function DepartmentDetailsPage() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Failed to create user')
-      setNewUser({
-        email: '',
-        name: '',
-        phoneNumber: '',
-        empCode: '',
-        role: 'PROJECT_ASSISTANT',
-      })
+      setNewUser({ email: '', name: '', phoneNumber: '' })
       setPhotoFile(null)
       setPhotoPreview(null)
-      if (data.inviteLink) {
-        setInviteLink(data.inviteLink)
-      } else {
-        setShowAddDialog(false)
-      }
+      setShowAddDialog(false)
       fetchDetails()
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to create user')
@@ -301,28 +287,10 @@ export default function DepartmentDetailsPage() {
     }
   }
 
-  const handleToggleRole = async (userId: string, role: string) => {
-    setUpdatingUser(userId)
-    try {
-      const response = await fetch(`/api/users/${userId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role }),
-      })
-      if (!response.ok) throw new Error('Failed to update role')
-      fetchDetails()
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to update role')
-    } finally {
-      setUpdatingUser(null)
-    }
-  }
-
   const openEditMemberDialog = (member: User) => {
     setEditingMember(member)
     setEditFormData({
       name: member.name || '',
-      empCode: member.empCode || '',
       phoneNumber: member.phoneNumber || '',
     })
     setEditPhotoFile(null)
@@ -337,9 +305,8 @@ export default function DepartmentDetailsPage() {
     try {
       const formData = new FormData()
       formData.append('name', editFormData.name)
-      if (editingMember.role === 'FACULTY') {
-        formData.append('empCode', editFormData.empCode)
-      } else {
+      // Faculty are Kerberos-provisioned and carry no employee code.
+      if (editingMember.role !== 'FACULTY') {
         formData.append('phoneNumber', editFormData.phoneNumber)
       }
       if (editPhotoFile) formData.append('photo', editPhotoFile)
@@ -348,32 +315,14 @@ export default function DepartmentDetailsPage() {
         method: 'PATCH',
         body: formData,
       })
-      if (!response.ok) throw new Error('Failed to update member')
+      const data = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(data?.error || 'Failed to update member')
       setShowEditMemberDialog(false)
       fetchDetails()
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to update member')
     } finally {
       setSubmitting(false)
-    }
-  }
-
-  const handleRegenerateInvite = async (userId: string) => {
-    setUpdatingUser(userId)
-    try {
-      const response = await fetch(`/api/users/${userId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ regenerateInvite: true }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Failed to regenerate setup link')
-      setInviteLink(data.inviteLink)
-      fetchDetails()
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to regenerate setup link')
-    } finally {
-      setUpdatingUser(null)
     }
   }
 
@@ -551,7 +500,6 @@ export default function DepartmentDetailsPage() {
               if (!open) {
                 setPhotoFile(null)
                 setPhotoPreview(null)
-                setInviteLink(null)
               }
             }}
           >
@@ -574,78 +522,36 @@ export default function DepartmentDetailsPage() {
                   accepting. Faculty are created automatically on their first Kerberos login.
                 </DialogDescription>
               </DialogHeader>
-              {inviteLink ? (
-                <div className="space-y-4">
-                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
-                    <p className="text-xs font-semibold text-emerald-700">Account created. Share this setup link with the faculty member:</p>
-                    <div className="mt-2 flex items-center gap-2">
-                      <Input readOnly value={inviteLink} className="text-xs" />
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => navigator.clipboard.writeText(inviteLink)}
-                      >
-                        Copy
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex justify-end">
-                    <Button type="button" className="cursor-pointer" onClick={() => { setShowAddDialog(false); setInviteLink(null) }}>Done</Button>
+              <form onSubmit={handleAddUser} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Name</Label>
+                  <Input id="name" placeholder="Full Name" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} disabled={submitting} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" type="email" placeholder="email@example.com" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required disabled={submitting} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phoneNumber">Phone Number (optional)</Label>
+                  <Input id="phoneNumber" placeholder="10-digit mobile" value={newUser.phoneNumber} onChange={(e) => setNewUser({ ...newUser, phoneNumber: e.target.value })} disabled={submitting} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="photo">Photo</Label>
+                  <div className="flex items-center gap-3">
+                    <EntityAvatar name={newUser.name} fallbackText={newUser.email || 'User'} imageUrl={photoPreview} className="h-12 w-12 border border-slate-200" />
+                    <Input id="photo" type="file" accept="image/*" onChange={(e) => handlePhotoChange(e, 'create')} />
                   </div>
                 </div>
-              ) : (
-                <form onSubmit={handleAddUser} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="role">Role</Label>
-                    <Select value={newUser.role} onValueChange={(value) => value && setNewUser({ ...newUser, role: value })}>
-                      <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
-                      <SelectContent>
-                        {/* Faculty aren't invited — they're provisioned on first Kerberos login */}
-                        <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
 
-                  {newUser.role === 'FACULTY' ? (
-                    <div className="space-y-2">
-                      <Label htmlFor="empCode">Employee Code</Label>
-                      <Input id="empCode" placeholder="e.g. FAC1029" value={newUser.empCode} onChange={(e) => setNewUser({ ...newUser, empCode: e.target.value })} required disabled={submitting} />
-                    </div>
-                  ) : (
-                    <>
-                      <div className="space-y-2">
-                        <Label htmlFor="name">Name</Label>
-                        <Input id="name" placeholder="Full Name" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} disabled={submitting} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="email">Email</Label>
-                        <Input id="email" type="email" placeholder="email@example.com" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required disabled={submitting} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="phoneNumber">Phone Number (optional)</Label>
-                        <Input id="phoneNumber" placeholder="10-digit mobile" value={newUser.phoneNumber} onChange={(e) => setNewUser({ ...newUser, phoneNumber: e.target.value })} disabled={submitting} />
-                      </div>
-                    </>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="photo">Photo</Label>
-                    <div className="flex items-center gap-3">
-                      <EntityAvatar name={newUser.name} fallbackText={newUser.email || newUser.empCode || 'User'} imageUrl={photoPreview} className="h-12 w-12 border border-slate-200" />
-                      <Input id="photo" type="file" accept="image/*" onChange={(e) => handlePhotoChange(e, 'create')} />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <Button type="button" variant="outline" className="cursor-pointer" onClick={() => setShowAddDialog(false)} disabled={submitting}>Cancel</Button>
-                    <Button type="submit" className="text-white cursor-pointer" style={{ backgroundColor: 'var(--theme)' }} disabled={submitting}>
-                      {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2 text-white" /> : <Plus className="h-4 w-4 mr-2" />}
-                      Create Account
-                    </Button>
-                  </div>
-                </form>
-              )}
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="outline" className="cursor-pointer" onClick={() => setShowAddDialog(false)} disabled={submitting}>Cancel</Button>
+                  <Button type="submit" className="text-white cursor-pointer" style={{ backgroundColor: 'var(--theme)' }} disabled={submitting}>
+                    {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2 text-white" /> : <Plus className="h-4 w-4 mr-2" />}
+                    Create Account
+                  </Button>
+                </div>
+              </form>
             </DialogContent>
           </Dialog>
         </div>
@@ -724,15 +630,10 @@ export default function DepartmentDetailsPage() {
                         </div>
                       </TableCell>
                       <TableCell className="py-2">
-                        <Select value={member.role} onValueChange={(value) => value && handleToggleRole(member.id, value)}>
-                          <SelectTrigger className="w-20 h-6 text-[11px] font-medium bg-transparent border-slate-200 shadow-none px-2">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="PROJECT_ASSISTANT">Project Assistant</SelectItem>
-                            <SelectItem value="FACULTY">Faculty</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        {/* Read-only: a role is fixed once the account exists. */}
+                        <Badge variant="secondary" className="bg-slate-100 text-slate-600 font-medium text-[10px] px-2 py-0">
+                          {ROLE_LABELS[member.role] ?? member.role}
+                        </Badge>
                       </TableCell>
                       <TableCell className="py-2 hidden sm:table-cell">
                         <span className="text-[11px] text-slate-600 font-medium">
@@ -752,17 +653,6 @@ export default function DepartmentDetailsPage() {
                       </TableCell>
                       <TableCell className="text-right pr-3 py-2">
                         <div className="flex items-center justify-end gap-1">
-                          {member.role === 'FACULTY' && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Regenerate setup link"
-                              onClick={() => handleRegenerateInvite(member.id)}
-                              className="h-6 w-6 text-slate-400 hover:text-slate-800 cursor-pointer"
-                            >
-                              <RefreshCw className="h-3 w-3" />
-                            </Button>
-                          )}
                           <Button variant="ghost" size="icon" onClick={() => openEditMemberDialog(member)} className="h-6 w-6 text-slate-400 hover:text-slate-800 cursor-pointer">
                             <Pencil className="h-3 w-3" />
                           </Button>
@@ -885,23 +775,16 @@ export default function DepartmentDetailsPage() {
                       {leave.reason && (
                         <p className="text-[11px] text-slate-500 line-clamp-1 mb-2 italic">&quot;{leave.reason}&quot;</p>
                       )}
-                      {/* Project Assistant leave is a Moderator's call only, so an
-                          admin sees those rows read-only. Faculty leave is theirs. */}
-                      {leave.user.role === 'PROJECT_ASSISTANT' ? (
-                        <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                          <Clock className="h-3 w-3" />
-                          Awaiting moderator decision
-                        </p>
-                      ) : (
-                        <div className="flex gap-1.5">
-                          <Button size="sm" className="flex-1 h-6 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer px-2" onClick={() => handleLeaveAction(leave.id, 'APPROVED')} disabled={actioningLeaveId === leave.id}>
-                            {actioningLeaveId === leave.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><CheckCircle2 className="h-3 w-3 mr-1" />Approve</>}
-                          </Button>
-                          <Button size="sm" variant="outline" className="flex-1 h-6 text-[11px] border-red-200 text-red-600 hover:bg-red-50 cursor-pointer px-2" onClick={() => handleLeaveAction(leave.id, 'REJECTED')} disabled={actioningLeaveId === leave.id}>
-                            {actioningLeaveId === leave.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><XCircle className="h-3 w-3 mr-1" />Reject</>}
-                          </Button>
-                        </div>
-                      )}
+                      {/* An admin can decide Project Assistant leave too now,
+                          alongside a Moderator — same action as Faculty leave. */}
+                      <div className="flex gap-1.5">
+                        <Button size="sm" className="flex-1 h-6 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer px-2" onClick={() => handleLeaveAction(leave.id, 'APPROVED')} disabled={actioningLeaveId === leave.id}>
+                          {actioningLeaveId === leave.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><CheckCircle2 className="h-3 w-3 mr-1" />Approve</>}
+                        </Button>
+                        <Button size="sm" variant="outline" className="flex-1 h-6 text-[11px] border-red-200 text-red-600 hover:bg-red-50 cursor-pointer px-2" onClick={() => handleLeaveAction(leave.id, 'REJECTED')} disabled={actioningLeaveId === leave.id}>
+                          {actioningLeaveId === leave.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><XCircle className="h-3 w-3 mr-1" />Reject</>}
+                        </Button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -971,12 +854,9 @@ export default function DepartmentDetailsPage() {
                 <Input id="memberPhoto" type="file" accept="image/*" onChange={(e) => handlePhotoChange(e, 'edit')} />
               </div>
             </div>
-            {editingMember?.role === 'FACULTY' ? (
-              <div className="space-y-2">
-                <Label htmlFor="editEmpCode">Employee Code</Label>
-                <Input id="editEmpCode" value={editFormData.empCode} onChange={(e) => setEditFormData({ ...editFormData, empCode: e.target.value })} required />
-              </div>
-            ) : (
+            {/* Faculty identity comes from Kerberos — there's nothing here for
+                an admin to edit beyond their display name and photo. */}
+            {editingMember?.role !== 'FACULTY' && (
               <div className="space-y-2">
                 <Label htmlFor="editPhoneNumber">Phone Number (optional)</Label>
                 <Input id="editPhoneNumber" value={editFormData.phoneNumber} onChange={(e) => setEditFormData({ ...editFormData, phoneNumber: e.target.value })} />
@@ -989,25 +869,6 @@ export default function DepartmentDetailsPage() {
               </Button>
             </DialogFooter>
           </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Regenerated Setup Link Dialog ── */}
-      <Dialog open={!!inviteLink && !showAddDialog} onOpenChange={(open) => { if (!open) setInviteLink(null) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Setup link ready</DialogTitle>
-            <DialogDescription>Share this link with the faculty member so they can set a password.</DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center gap-2">
-            <Input readOnly value={inviteLink || ''} className="text-xs" />
-            <Button type="button" size="sm" variant="outline" onClick={() => inviteLink && navigator.clipboard.writeText(inviteLink)}>
-              Copy
-            </Button>
-          </div>
-          <DialogFooter>
-            <Button type="button" className="cursor-pointer" onClick={() => setInviteLink(null)}>Done</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

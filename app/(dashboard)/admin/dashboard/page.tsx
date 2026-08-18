@@ -35,7 +35,7 @@ type Stats = {
   todayAttendanceRate: number
 }
 
-type BookingPoint = { day: string; booked: number; completed: number; absent: number }
+type BookingPoint = { day: string; booked: number; completed: number; incomplete: number; absent: number }
 type AttendancePoint = { day: string; onTime: number; late: number; absent: number }
 
 type Department = { id: string; name: string }
@@ -45,7 +45,7 @@ type RecentBooking = {
   date: string
   slot: string
   workType: string | null
-  status: "BOOKED" | "COMPLETED" | "ABSENT" | "CANCELLED"
+  status: "BOOKED" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
   facultyName: string
   paName: string
   departmentName: string
@@ -54,6 +54,7 @@ type RecentBooking = {
 const STATUS_STYLES: Record<RecentBooking["status"], string> = {
   BOOKED: "bg-indigo-50 text-indigo-600",
   COMPLETED: "bg-emerald-50 text-emerald-600",
+  INCOMPLETE: "bg-amber-50 text-amber-600",
   ABSENT: "bg-red-50 text-red-600",
   CANCELLED: "bg-slate-100 text-slate-500",
 }
@@ -140,7 +141,7 @@ export default function AdminDashboard() {
           accent="bg-emerald-50 text-emerald-600"
           label="Today's Attendance"
           value={stats ? `${stats.todayAttendanceRate}%` : "—"}
-          sub={stats ? `${stats.todayPresent} of ${stats.todayExpected} punched in` : undefined}
+          sub={stats ? `${stats.todayPresent} of ${stats.todayExpected} PAs punched in` : undefined}
         />
         <StatCard
           icon={<Building2 className="h-5 w-5" />}
@@ -186,6 +187,7 @@ export default function AdminDashboard() {
                   <Legend iconType="circle" wrapperStyle={{ fontSize: 12, color: "#64748b" }} />
                   <Bar dataKey="booked" name="Booked" fill="#6366f1" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="completed" name="Completed" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="incomplete" name="Not completed" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="absent" name="No-show" fill="#ef4444" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>

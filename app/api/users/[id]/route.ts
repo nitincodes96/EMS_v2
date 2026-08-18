@@ -41,35 +41,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         return NextResponse.json({ user: rest })
       }
 
-      if (body.role === "PROJECT_ASSISTANT" || body.role === "FACULTY" || body.role === "MODERATOR") {
-        if (body.role === "FACULTY" && !target.empCode) {
-          return NextResponse.json({ error: "Set an employee code before switching this user to Faculty" }, { status: 400 })
-        }
-        if (body.role === "PROJECT_ASSISTANT" && !target.email) {
-          return NextResponse.json({ error: "Set an email before switching this user to Project Assistant" }, { status: 400 })
-        }
-        // A Moderator decides leave for every department, so only an Admin may appoint one.
-        if (body.role === "MODERATOR") {
-          if (sessionUser.role !== "ADMIN") {
-            return NextResponse.json({ error: "Only an Admin can appoint a Moderator" }, { status: 403 })
-          }
-          if (!target.email) {
-            return NextResponse.json({ error: "Set an email before switching this user to Moderator" }, { status: 400 })
-          }
-        }
-        if (body.role !== "MODERATOR" && !target.departmentId) {
-          return NextResponse.json(
-            { error: "Assign a department before moving this user out of the Moderator role" },
-            { status: 400 }
-          )
-        }
-        const updated = await prisma.user.update({
-          where: { id },
-          // Promoting to Moderator detaches the user from their department.
-          data: { role: body.role, ...(body.role === "MODERATOR" ? { departmentId: null } : {}) },
-        })
-        const { password: _p, ...rest } = updated
-        return NextResponse.json({ user: rest })
+      // A user's role is fixed once the account exists — it decides which
+      // department scoping, approval routing and dashboards apply to them, so
+      // changing it underneath live bookings/leave would silently rewrite who
+      // owns that history. Delete and re-invite instead.
+      if (typeof body.role === "string") {
+        return NextResponse.json({ error: "A user's role can't be changed after the account is created" }, { status: 400 })
       }
 
       if (body.regenerateInvite === true) {
@@ -116,17 +93,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       ...(photoUrl ? { photoUrl } : {}),
     }
 
-    // The dialog can change the role in the same request, so the fields to read
-    // follow the requested role rather than the stored one.
+    // The role is immutable after creation (see the JSON branch above), so the
+    // fields to read always follow the stored role. The dialog still posts the
+    // field, but a value that differs from the stored one is rejected outright
+    // rather than silently ignored.
     const roleRaw = formData.get("role") as string | null
-    const requestedRole =
-      roleRaw === "PROJECT_ASSISTANT" || roleRaw === "FACULTY" || roleRaw === "MODERATOR"
-        ? roleRaw
-        : null
-    if (roleRaw && !requestedRole) {
-      return NextResponse.json({ error: "Invalid role" }, { status: 400 })
+    if (roleRaw && roleRaw !== target.role) {
+      return NextResponse.json({ error: "A user's role can't be changed after the account is created" }, { status: 400 })
     }
-    const effectiveRole = requestedRole ?? target.role
+    const effectiveRole = target.role
 
     if (effectiveRole === "FACULTY") {
       const empCodeRaw = formData.get("empCode") as string | null
@@ -142,9 +117,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           }
         }
         data.empCode = empCode
-        data.username = empCode
       }
-      if (resolvedName !== null) data.name = resolvedName || null
+      if (resolvedName !== null) {
+        const effectiveEmpCode = (data.empCode as string | undefined) ?? target.empCode
+        data.name = resolvedName || effectiveEmpCode || null
+      }
     } else {
       const emailRaw = formData.get("email") as string | null
       const phoneNumber = formData.get("phoneNumber") as string | null
@@ -159,38 +136,32 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
       if (email !== null) data.email = email
       if (resolvedName !== null) {
-        data.name = resolvedName || null
-        data.username = (resolvedName || email?.split("@")[0] || target.username).trim()
+        const effectiveEmail = email ?? target.email
+        data.name = resolvedName || effectiveEmail?.split("@")[0] || null
       }
       if (phoneNumber !== null) data.phoneNumber = phoneNumber
     }
 
-    // Validate the role against the values this same request is setting, not the
-    // stored ones — the admin may be filling in the field the new role requires.
-    if (requestedRole && requestedRole !== target.role) {
-      const nextEmpCode = (data.empCode as string | undefined) ?? target.empCode
-      const nextEmail = (data.email as string | null | undefined) ?? target.email
-
-      if (requestedRole === "FACULTY" && !nextEmpCode) {
-        return NextResponse.json({ error: "An employee code is required for Faculty" }, { status: 400 })
-      }
-      if (requestedRole !== "FACULTY" && !nextEmail) {
-        return NextResponse.json({ error: "An email is required for this role" }, { status: 400 })
-      }
-      if (requestedRole === "MODERATOR") {
-        if (sessionUser.role !== "ADMIN") {
-          return NextResponse.json({ error: "Only an Admin can appoint a Moderator" }, { status: 403 })
+    // A PA with an open booking in their current department can't be silently
+    // moved out of it — the faculty who booked them, and the department's own
+    // rosters/dashboards, all still expect them there until it's closed out.
+    if (target.role === "PROJECT_ASSISTANT" && target.departmentId) {
+      const finalDepartmentId = "departmentId" in data ? (data.departmentId as string | null) : target.departmentId
+      if (finalDepartmentId !== target.departmentId) {
+        const activeBookingCount = await prisma.booking.count({
+          where: { paId: target.id, departmentId: target.departmentId, status: "BOOKED" },
+        })
+        if (activeBookingCount > 0) {
+          return NextResponse.json(
+            {
+              error: `This PA has ${activeBookingCount} active booking${activeBookingCount > 1 ? "s" : ""} in their current department. Complete or cancel ${activeBookingCount > 1 ? "them" : "it"} before changing their department.`,
+              // Lets the client deep-link straight to the blocking bookings.
+              blockedBookings: { departmentId: target.departmentId, paId: target.id },
+            },
+            { status: 409 }
+          )
         }
-        // Moderators belong to the organization, not a department.
-        data.departmentId = null
-      } else if (!((data.departmentId as string | null | undefined) ?? target.departmentId)) {
-        return NextResponse.json(
-          { error: "Assign a department before moving this user out of the Moderator role" },
-          { status: 400 }
-        )
       }
-
-      data.role = requestedRole
     }
 
     const updated = await prisma.user.update({ where: { id }, data })

@@ -46,7 +46,7 @@ export const authOptions: NextAuthOptions = {
         return {
           id: user.id,
           email: user.email,
-          name: user.username,
+          name: user.name || user.email,
           photoUrl: user.photoUrl,
           role: user.role,
           departmentId: user.departmentId,
@@ -92,8 +92,7 @@ export const authOptions: NextAuthOptions = {
           user = await prisma.user.create({
             data: {
               email: claims.email,
-              username: claims.preferred_username,
-              name: claims.name,
+              name: claims.name || claims.preferred_username,
               password: null,
               role: "FACULTY",
               departmentId: department.id,
@@ -117,7 +116,7 @@ export const authOptions: NextAuthOptions = {
         return {
           id: user.id,
           email: user.email,
-          name: user.username,
+          name: user.name || user.email,
           photoUrl: user.photoUrl,
           role: user.role,
           departmentId: user.departmentId,

@@ -38,9 +38,9 @@ export async function GET(request: Request) {
   const leaves = await prisma.leave.findMany({
     where: isKnownStatus ? { ...scope, status: statusParam } : scope,
     include: {
-      user: { select: { id: true, name: true, username: true, email: true, role: true, photoUrl: true } },
+      user: { select: { id: true, name: true, email: true, role: true, photoUrl: true } },
       department: { select: { id: true, name: true } },
-      approver: { select: { id: true, name: true, username: true } },
+      approver: { select: { id: true, name: true } },
     },
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
   })

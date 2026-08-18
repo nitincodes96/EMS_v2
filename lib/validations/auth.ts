@@ -8,7 +8,7 @@ export const departmentSchema = z.object({
 export type DepartmentValues = z.infer<typeof departmentSchema>;
 
 export const accountSchema = z.object({
-  username: z.string().min(1, "Username is required"),
+  name: z.string().min(1, "Name is required"),
   userId: z.string().min(1, "User ID is required"),
   password: z.string()
     .min(8, "Password must be at least 8 characters")

@@ -36,7 +36,7 @@ import type { User } from "@/types"
 // Types
 // ---------------------------------------------------------------------------
 
-type BookingStatus = "BOOKED" | "COMPLETED" | "ABSENT" | "CANCELLED"
+type BookingStatus = "BOOKED" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
 
 type Booking = {
   id: string
@@ -46,12 +46,13 @@ type Booking = {
   workType: string | null
   task: string
   status: BookingStatus
-  pa: { id: string; name: string | null; username: string; email: string; photoUrl: string | null }
+  pa: { id: string; name: string | null; email: string; photoUrl: string | null }
 }
 
 const STATUS_CHIP: Record<BookingStatus, string> = {
   BOOKED: "bg-indigo-50 text-indigo-700",
   COMPLETED: "bg-emerald-50 text-emerald-700",
+  INCOMPLETE: "bg-amber-50 text-amber-700",
   ABSENT: "bg-red-50 text-red-700",
   CANCELLED: "bg-slate-100 text-slate-500",
 }
@@ -59,6 +60,7 @@ const STATUS_CHIP: Record<BookingStatus, string> = {
 const STATUS_LABEL: Record<BookingStatus, string> = {
   BOOKED: "Booked",
   COMPLETED: "Completed",
+  INCOMPLETE: "Not completed",
   ABSENT: "Absent",
   CANCELLED: "Cancelled",
 }
@@ -376,7 +378,7 @@ export default function FacultyDashboard() {
                         )}
                       >
                         {format(new Date(booking.startTime), "h:mm a")} ·{" "}
-                        {booking.pa.name || booking.pa.username}
+                        {booking.pa.name || booking.pa.email}
                       </div>
                     ))}
                     {overflow > 0 && (
@@ -414,13 +416,13 @@ export default function FacultyDashboard() {
                   <div className="flex items-center gap-2.5">
                     <EntityAvatar
                       name={booking.pa.name}
-                      fallbackText={booking.pa.email || booking.pa.username}
+                      fallbackText={booking.pa.email}
                       imageUrl={booking.pa.photoUrl}
                       className="h-8 w-8 shrink-0 border border-slate-200"
                     />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-slate-900">
-                        {booking.pa.name || booking.pa.username}
+                        {booking.pa.name || booking.pa.email}
                       </p>
                       <p className="truncate text-xs text-slate-400">
                         {format(new Date(booking.startTime), "h:mm a")} –{" "}
