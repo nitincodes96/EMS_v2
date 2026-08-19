@@ -5,6 +5,7 @@ import { getSessionUser, hasRole } from "@/lib/api-auth"
 import { isValidWorkType } from "@/lib/work-types"
 import { checkBookingHorizon, checkSlotAvailability, countActiveFacultyBookings, toBookingDate } from "@/lib/booking-rules"
 import { notifyPaOfBooking } from "@/lib/booking-notify"
+import { logEvent } from "@/lib/system-log"
 
 const LIST_INCLUDE = {
   faculty: { select: { id: true, name: true, email: true, photoUrl: true } },
@@ -241,6 +242,16 @@ export async function POST(request: Request) {
         actorId: sessionUser.id,
         message: `Booked ${slotLabel} on ${date}${workType ? ` · ${workType}` : ""}`,
       },
+    })
+
+    await logEvent({
+      category: "BOOKING",
+      action: "Booking created",
+      description: `${booking.faculty.name || booking.faculty.email} booked ${booking.pa.name || booking.pa.email} for ${date} ${slotLabel}${workType ? ` · ${workType}` : ""}`,
+      actor: sessionUser,
+      entityType: "Booking",
+      entityId: booking.id,
+      departmentId: booking.departmentId,
     })
 
     // Notify the PA on the dashboard and by email (FR-4.5 / FR-5.4)

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import prisma from "@/lib/prisma"
 import { getSessionUser, canAccessDepartment } from "@/lib/api-auth"
+import { logEvent } from "@/lib/system-log"
 
 const VALID_TYPES = ["NATIONAL", "RELIGIOUS", "CUSTOM"]
 
@@ -27,6 +28,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const holiday = await prisma.holiday.create({
       data: { departmentId: id, name, date: new Date(date), type: typeUpper as "NATIONAL" | "RELIGIOUS" | "CUSTOM" },
+    })
+
+    await logEvent({
+      category: "DEPARTMENT",
+      action: "Holiday added",
+      description: `Added ${typeUpper.toLowerCase()} holiday "${holiday.name}" on ${holiday.date.toISOString().slice(0, 10)}`,
+      actor: sessionUser,
+      entityType: "Holiday",
+      entityId: holiday.id,
+      departmentId: id,
     })
 
     return NextResponse.json({ holiday }, { status: 201 })

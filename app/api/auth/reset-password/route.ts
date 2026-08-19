@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { passwordSchema } from "@/lib/validations/password";
+import { logEvent } from "@/lib/system-log";
 
 export async function POST(req: Request) {
   try {
@@ -36,6 +37,16 @@ export async function POST(req: Request) {
         resetToken: null,
         resetTokenExpiry: null,
       },
+    });
+
+    await logEvent({
+      category: "AUTH",
+      action: "Password reset",
+      description: `${user.name || user.email} completed a password reset`,
+      actor: user,
+      entityType: "User",
+      entityId: user.id,
+      departmentId: user.departmentId,
     });
 
     return NextResponse.json({ message: "Password reset successfully" }, { status: 200 });

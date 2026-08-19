@@ -6,6 +6,7 @@ import path from "path";
 import crypto from "crypto";
 import { getMailBrandName, sendMail } from "@/lib/mail";
 import { otpEmailHtml } from "@/lib/email-templates";
+import { logEvent } from "@/lib/system-log";
 
 export async function POST(req: Request) {
   try {
@@ -86,6 +87,15 @@ export async function POST(req: Request) {
           isVerified: false
         }
       });
+    });
+
+    await logEvent({
+      category: "AUTH",
+      action: "Organization registered",
+      description: `${name} registered the organization "${organizationName}" and took the ${role === "ADMIN" ? "Admin" : "Project Assistant"} account`,
+      actor: user,
+      entityType: "User",
+      entityId: user.id,
     });
 
     const brandName = await getMailBrandName();

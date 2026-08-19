@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/api-auth"
 import { leaveDecisionEmailHtml } from "@/lib/email-templates"
 import { appLink, displayName, mailBrandName, notifyUser } from "@/lib/notify"
 import { checkLeaveDecisionAccess, leaveDateLabel, leaveDays } from "@/lib/leave-routing"
+import { logEvent } from "@/lib/system-log"
 
 // PATCH: approve or reject a leave request.
 //
@@ -61,6 +62,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         decisionRemark: trimmedRemark,
         decidedAt: new Date(),
       },
+    })
+
+    await logEvent({
+      category: "LEAVE",
+      action: status === "APPROVED" ? "Leave approved" : "Leave rejected",
+      description: `${displayName(leave.user)}'s leave for ${leaveDateLabel(leave.startDate, leave.endDate)} was ${status.toLowerCase()}${trimmedRemark ? ` — ${trimmedRemark}` : ""}`,
+      actor: sessionUser,
+      entityType: "Leave",
+      entityId: leave.id,
+      departmentId: leave.departmentId,
     })
 
     await notifyRequester({ leave, status, remark: trimmedRemark, approverId: sessionUser.id })

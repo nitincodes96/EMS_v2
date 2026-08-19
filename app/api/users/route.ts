@@ -5,6 +5,7 @@ import { saveUploadedFile } from "@/lib/upload"
 import { generateInviteToken } from "@/lib/invite"
 import { getMailBrandName, sendMail } from "@/lib/mail"
 import { inviteEmailHtml } from "@/lib/email-templates"
+import { logEvent } from "@/lib/system-log"
 
 export async function GET(request: Request) {
   const sessionUser = await getSessionUser()
@@ -140,6 +141,17 @@ export async function POST(request: Request) {
       })
 
       const inviteLink = `${process.env.NEXT_PUBLIC_BASE_URL}/login?invite=${inviteToken}`
+
+      await logEvent({
+        category: "USER",
+        action: "Faculty account created",
+        description: `Created Faculty account ${user.name || user.empCode} in ${department?.name ?? "no department"}`,
+        actor: sessionUser,
+        entityType: "User",
+        entityId: user.id,
+        departmentId,
+      })
+
       const { password: _password, inviteToken: _inviteToken, otp: _otp, ...userWithoutSensitiveFields } = user
       return NextResponse.json({ user: userWithoutSensitiveFields, inviteLink }, { status: 201 })
     }
@@ -193,6 +205,16 @@ export async function POST(request: Request) {
     } catch (mailError) {
       console.error("Error sending invite email:", mailError)
     }
+
+    await logEvent({
+      category: "USER",
+      action: isModerator ? "Moderator invited" : "Project Assistant invited",
+      description: `Invited ${user.name || email} as ${isModerator ? "a Moderator" : `a Project Assistant in ${department?.name ?? "no department"}`}`,
+      actor: sessionUser,
+      entityType: "User",
+      entityId: user.id,
+      departmentId: isModerator ? null : departmentId,
+    })
 
     const { password: _password, inviteToken: _inviteToken, otp: _otp, ...userWithoutSensitiveFields } = user
     return NextResponse.json({ user: userWithoutSensitiveFields }, { status: 201 })

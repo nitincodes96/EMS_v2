@@ -123,6 +123,7 @@ model User {
   notifications   Notification[]
   sessions        UserSession[]
   bookingLogs     BookingLog[]   @relation("BookingLogActor")
+  systemLogs      SystemLog[]    @relation("SystemLogActor")
 
   @@index([departmentId])
 }
@@ -228,6 +229,42 @@ model BookingLog {
   @@index([actorId])
 }
 
+/**
+ * Site-wide audit trail behind the admin System Logs page. Unlike BookingLog
+ * (which is scoped to one booking and drives its activity timeline), this
+ * records every notable action across auth, users, departments, bookings and
+ * leave in one stream. Attendance punches are deliberately excluded — they'd
+ * swamp the feed and already have their own page.
+ */
+model SystemLog {
+  id          String            @id @default(uuid())
+  category    SystemLogCategory
+  action      String
+  description String            @db.Text
+
+  // The actor is both linked and snapshotted: the relation powers "everything
+  // this user did", while the label/role stay readable after the account is
+  // renamed or deleted — which is the whole point of an audit trail.
+  actorId    String?
+  actor      User?   @relation("SystemLogActor", fields: [actorId], references: [id])
+  actorLabel String?
+  actorRole  Role?
+
+  // Loose pointer to whatever the event was about. Deliberately not a foreign
+  // key, so deleting the booking/leave never erases the record that it happened.
+  entityType String?
+  entityId   String?
+
+  departmentId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([category, createdAt])
+  @@index([actorId])
+  @@index([departmentId])
+}
+
 model Notification {
   id        String           @id @default(uuid())
   userId    String
@@ -313,6 +350,15 @@ enum BookingLogAction {
   MARKED_INCOMPLETE
   RATED
   PA_REPORTED
+}
+
+// Buckets the System Logs page filters by.
+enum SystemLogCategory {
+  AUTH
+  USER
+  DEPARTMENT
+  BOOKING
+  LEAVE
 }
 
 enum NotificationType {

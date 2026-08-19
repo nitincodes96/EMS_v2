@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma"
 import { getSessionUser, canAccessDepartment } from "@/lib/api-auth"
 import { saveUploadedFile } from "@/lib/upload"
 import { generateInviteToken } from "@/lib/invite"
+import { logEvent } from "@/lib/system-log"
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser()
@@ -37,6 +38,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
       if (typeof body.isActive === "boolean") {
         const updated = await prisma.user.update({ where: { id }, data: { isActive: body.isActive } })
+
+        await logEvent({
+          category: "USER",
+          action: body.isActive ? "User activated" : "User deactivated",
+          description: `${body.isActive ? "Activated" : "Deactivated"} ${targetLabel(target)}`,
+          actor: sessionUser,
+          entityType: "User",
+          entityId: id,
+          departmentId: target.departmentId,
+        })
+
         const { password: _p, ...rest } = updated
         return NextResponse.json({ user: rest })
       }
@@ -57,6 +69,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         })
         const { password: _p, ...rest } = updated
         const inviteLink = `${process.env.NEXT_PUBLIC_BASE_URL}/login?invite=${inviteToken}`
+
+        await logEvent({
+          category: "USER",
+          action: "Setup link regenerated",
+          description: `Issued a fresh setup link for ${targetLabel(target)}, resetting their account to invited`,
+          actor: sessionUser,
+          entityType: "User",
+          entityId: id,
+          departmentId: target.departmentId,
+        })
+
         return NextResponse.json({ user: rest, inviteLink })
       }
 
@@ -75,11 +98,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
+    let targetDepartmentName: string | null = null
     if (resolvedDepartmentId) {
       const department = await prisma.department.findUnique({ where: { id: resolvedDepartmentId } })
       if (!department) {
         return NextResponse.json({ error: "Department not found" }, { status: 404 })
       }
+      targetDepartmentName = department.name
     }
 
     let photoUrl: string | undefined
@@ -166,10 +191,29 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const updated = await prisma.user.update({ where: { id }, data })
 
+    const movedDepartment = updated.departmentId !== target.departmentId
+    await logEvent({
+      category: "USER",
+      action: movedDepartment ? "User moved department" : "User profile updated",
+      description: movedDepartment
+        ? `Moved ${targetLabel(target)} to ${targetDepartmentName ?? "no department"}`
+        : `Updated ${targetLabel(target)}'s profile`,
+      actor: sessionUser,
+      entityType: "User",
+      entityId: id,
+      departmentId: updated.departmentId,
+    })
+
     const { password: _password, ...userWithoutPassword } = updated
     return NextResponse.json({ user: userWithoutPassword })
   } catch (error) {
     console.error("Error updating user:", error)
     return NextResponse.json({ error: "Failed to update user" }, { status: 500 })
   }
+}
+
+/** How an edited account is named in the audit trail. */
+function targetLabel(user: { name: string | null; email: string | null; empCode: string | null; role: string }): string {
+  const name = user.name || user.email || user.empCode || "an account"
+  return `${name} (${user.role.replace(/_/g, " ").toLowerCase()})`
 }

@@ -1,7 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { useParams } from "next/navigation"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   addMonths,
@@ -471,6 +471,17 @@ function DayPanel({
   const [workType, setWorkType] = useState("")
   const [description, setDescription] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  // Held between the success toast and the redirect below, so the button can't
+  // be pressed again during the pause and the timer dies with the component.
+  const [redirecting, setRedirecting] = useState(false)
+  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const router = useRouter()
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimer.current) clearTimeout(redirectTimer.current)
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -587,11 +598,26 @@ function DayPanel({
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || "Failed to book")
-      toast.success("Slot booked successfully.")
+
+      const bookingId: string | undefined = json?.booking?.id
       setWorkType("")
       setDescription("")
       await load()
       onBooked()
+
+      // Give the confirmation a beat to register before dropping the faculty
+      // into the booking they just made. Without an id there's nothing to open,
+      // so we just stay put.
+      if (bookingId) {
+        toast.success("Slot booked. Opening your booking…")
+        setRedirecting(true)
+        redirectTimer.current = setTimeout(() => {
+          router.push(`/faculty/bookings/${bookingId}`)
+        }, 2000)
+        return
+      }
+
+      toast.success("Slot booked successfully.")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to book")
     } finally {
@@ -814,9 +840,9 @@ function DayPanel({
               <Button
                 className="w-full bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer"
                 onClick={submit}
-                disabled={submitting || !hasSelection}
+                disabled={submitting || redirecting || !hasSelection}
               >
-                {submitting ? "Booking…" : "Confirm booking"}
+                {redirecting ? "Opening booking…" : submitting ? "Booking…" : "Confirm booking"}
               </Button>
             </div>
           </div>

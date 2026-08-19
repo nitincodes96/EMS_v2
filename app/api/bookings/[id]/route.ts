@@ -8,6 +8,7 @@ import { notifyPaOfBooking } from "@/lib/booking-notify"
 import { bookingClosedByAdminEmailHtml } from "@/lib/email-templates"
 import { isValidWorkType } from "@/lib/work-types"
 import { formatDuration } from "@/lib/booking-slots"
+import { logEvent } from "@/lib/system-log"
 import {
   checkBookingHorizon,
   checkSlotAvailability,
@@ -29,6 +30,11 @@ function slotLabel(start: Date, end: Date) {
 
 function dayLabel(date: Date) {
   return date.toISOString().slice(0, 10)
+}
+
+/** "2026-08-18 9:00 AM–10:00 AM" — how a booking reads in the system log. */
+function bookingLabel(booking: { date: Date; startTime: Date; endTime: Date }) {
+  return `${dayLabel(booking.date)} ${slotLabel(booking.startTime, booking.endTime)}`
 }
 
 /** Faculty who own the booking, the assigned PA, or an admin may view it. */
@@ -162,6 +168,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         },
       })
 
+      await logEvent({
+        category: "BOOKING",
+        action: body.done ? "Work reported done" : "Work reported not done",
+        description: `${displayName(updated.pa)} reported the ${bookingLabel(updated)} booking for ${displayName(updated.faculty)} as ${body.done ? "done" : "not done"}${remark ? ` — ${remark}` : ""}`,
+        actor: sessionUser,
+        entityType: "Booking",
+        entityId: id,
+        departmentId: booking.departmentId,
+      })
+
       await createNotification({
         userId: booking.facultyId,
         type: "BOOKING",
@@ -218,6 +234,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           message: `Rated the PA ${rating}/5`,
           remark,
         },
+      })
+
+      await logEvent({
+        category: "BOOKING",
+        action: "Booking rated",
+        description: `${displayName(updated.faculty)} rated ${displayName(updated.pa)} ${rating}/5 for the ${bookingLabel(updated)} booking`,
+        actor: sessionUser,
+        entityType: "Booking",
+        entityId: id,
+        departmentId: booking.departmentId,
       })
 
       return NextResponse.json({ booking: updated })
@@ -297,6 +323,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           message: `Rescheduled from ${previous} to ${next}`,
           remark,
         },
+      })
+
+      await logEvent({
+        category: "BOOKING",
+        action: "Booking rescheduled",
+        description: `${displayName(updated.faculty)}'s booking with ${displayName(updated.pa)} moved from ${previous} to ${next}${remark ? ` — ${remark}` : ""}`,
+        actor: sessionUser,
+        entityType: "Booking",
+        entityId: id,
+        departmentId: booking.departmentId,
       })
 
       await notifyPaOfBooking({
@@ -392,6 +428,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     await prisma.bookingLog.create({
       data: { bookingId: id, action: logAction, actorId: sessionUser.id, message: logMessage, remark },
+    })
+
+    const STATUS_ACTION = {
+      CANCELLED: "Booking cancelled",
+      COMPLETED: "Booking completed",
+      INCOMPLETE: "Booking marked incomplete",
+      ABSENT: "PA marked absent",
+    } as const
+
+    await logEvent({
+      category: "BOOKING",
+      action: isAdmin ? `${STATUS_ACTION[status]} (admin)` : STATUS_ACTION[status],
+      description: `${displayName(updated.faculty)}'s ${bookingLabel(updated)} booking with ${displayName(updated.pa)} was ${status.toLowerCase()}${isAdmin ? " by an admin" : ""}${remark ? ` — ${remark}` : ""}`,
+      actor: sessionUser,
+      entityType: "Booking",
+      entityId: id,
+      departmentId: booking.departmentId,
     })
 
     // Neither party initiated this, so both need to hear it from us — on the

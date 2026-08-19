@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import prisma from "@/lib/prisma"
 import { getSessionUser, canAccessDepartment } from "@/lib/api-auth"
+import { logEvent } from "@/lib/system-log"
 
 const VALID_TYPES = ["NATIONAL", "RELIGIOUS", "CUSTOM"]
 
@@ -40,6 +41,17 @@ export async function PATCH(
     }
 
     const updated = await prisma.holiday.update({ where: { id: holidayId }, data })
+
+    await logEvent({
+      category: "DEPARTMENT",
+      action: "Holiday updated",
+      description: `Updated holiday "${updated.name}" on ${updated.date.toISOString().slice(0, 10)}`,
+      actor: sessionUser,
+      entityType: "Holiday",
+      entityId: holidayId,
+      departmentId: id,
+    })
+
     return NextResponse.json({ holiday: updated })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -70,5 +82,16 @@ export async function DELETE(
   }
 
   await prisma.holiday.delete({ where: { id: holidayId } })
+
+  await logEvent({
+    category: "DEPARTMENT",
+    action: "Holiday removed",
+    description: `Removed holiday "${holiday.name}" on ${holiday.date.toISOString().slice(0, 10)}`,
+    actor: sessionUser,
+    entityType: "Holiday",
+    entityId: holidayId,
+    departmentId: id,
+  })
+
   return NextResponse.json({ message: "Holiday deleted" })
 }

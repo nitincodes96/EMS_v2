@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma"
 import { getSessionUser } from "@/lib/api-auth"
 import { generateUniqueOrgSlug } from "@/lib/slug"
 import { saveUploadedFile } from "@/lib/upload"
+import { logEvent } from "@/lib/system-log"
 
 type LocationInput = { name: string; latitude: number; longitude: number; radiusMeters: number }
 type HolidayInput = { name: string; date: string; type: "CUSTOM" | "RELIGIOUS" | "NATIONAL" }
@@ -174,6 +175,16 @@ export async function POST(request: Request) {
         },
       },
       include: { locations: true },
+    })
+
+    await logEvent({
+      category: "DEPARTMENT",
+      action: "Department created",
+      description: `Created department "${department.name}" with a ${shiftStartTime}–${shiftEndTime} shift on ${workingDays}`,
+      actor: sessionUser,
+      entityType: "Department",
+      entityId: department.id,
+      departmentId: department.id,
     })
 
     return NextResponse.json({ department }, { status: 201 })

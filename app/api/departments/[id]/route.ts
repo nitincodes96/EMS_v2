@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { getSessionUser } from "@/lib/api-auth"
 import { saveUploadedFile } from "@/lib/upload"
+import { logEvent } from "@/lib/system-log"
 
 type LocationInput = { name: string; latitude: number; longitude: number; radiusMeters: number }
 
@@ -142,9 +143,91 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       include: { locations: true },
     })
 
+    await logEvent({
+      category: "DEPARTMENT",
+      action: "Department updated",
+      description: describeDepartmentChanges(existing, {
+        name,
+        workingDays,
+        shiftStartTime,
+        shiftEndTime,
+        lateGraceMinutes,
+        facultyBookingLimit,
+        slotDurationMinutes,
+        bookingHorizonDays,
+        bookingChangeCutoffMinutes,
+        geofenceEnabled,
+        lunchStartTime,
+        lunchEndTime,
+      }),
+      actor: sessionUser,
+      entityType: "Department",
+      entityId: id,
+      departmentId: id,
+    })
+
     return NextResponse.json({ department })
   } catch (error) {
     console.error("Error updating department:", error)
     return NextResponse.json({ error: "Failed to update department" }, { status: 500 })
   }
+}
+
+/**
+ * Names the settings that actually changed, so the audit trail reads
+ * "Updated FSM: slot duration 30 min -> 60 min" rather than just "updated".
+ * Falls back to a plain notice when only untracked fields (logo, description,
+ * locations) moved.
+ */
+function describeDepartmentChanges(
+  before: DepartmentSettings & { name: string },
+  after: DepartmentSettings & { name: string }
+): string {
+  const labels: Record<keyof DepartmentSettings, string> = {
+    workingDays: "working days",
+    shiftStartTime: "shift start",
+    shiftEndTime: "shift end",
+    lateGraceMinutes: "grace window",
+    facultyBookingLimit: "faculty booking limit",
+    slotDurationMinutes: "slot duration",
+    bookingHorizonDays: "booking window",
+    bookingChangeCutoffMinutes: "change cutoff",
+    geofenceEnabled: "geo-fence",
+    lunchStartTime: "lunch start",
+    lunchEndTime: "lunch end",
+  }
+
+  const changes: string[] = []
+  if (before.name !== after.name) {
+    changes.push(`renamed to "${after.name}"`)
+  }
+  for (const key of Object.keys(labels) as (keyof DepartmentSettings)[]) {
+    if (before[key] !== after[key]) {
+      changes.push(`${labels[key]} ${formatSetting(before[key])} \u2192 ${formatSetting(after[key])}`)
+    }
+  }
+
+  return changes.length > 0
+    ? `Updated "${after.name}": ${changes.join(", ")}`
+    : `Updated "${after.name}" settings`
+}
+
+type DepartmentSettings = {
+  workingDays: string
+  shiftStartTime: string
+  shiftEndTime: string
+  lateGraceMinutes: number
+  facultyBookingLimit: number
+  slotDurationMinutes: number
+  bookingHorizonDays: number
+  bookingChangeCutoffMinutes: number
+  geofenceEnabled: boolean
+  lunchStartTime: string | null
+  lunchEndTime: string | null
+}
+
+function formatSetting(value: string | number | boolean | null): string {
+  if (value === null || value === "") return "none"
+  if (typeof value === "boolean") return value ? "on" : "off"
+  return String(value)
 }

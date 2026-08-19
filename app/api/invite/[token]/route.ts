@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
 import prisma from "@/lib/prisma"
 import { passwordSchema } from "@/lib/validations/password"
+import { logEvent } from "@/lib/system-log"
 
 export async function GET(_request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
@@ -54,6 +55,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
         inviteToken: null,
         inviteTokenExpiry: null,
       },
+    })
+
+    await logEvent({
+      category: "AUTH",
+      action: "Invite accepted",
+      description: `${user.name || user.email || user.empCode} set their password and activated their account`,
+      actor: user,
+      entityType: "User",
+      entityId: user.id,
+      departmentId: user.departmentId,
     })
 
     return NextResponse.json({ email: user.email })

@@ -12,6 +12,7 @@ import {
   leaveDays,
   roleLabel,
 } from "@/lib/leave-routing"
+import { logEvent } from "@/lib/system-log"
 
 function countLeaveDays(startDate: Date, endDate: Date) {
   return differenceInCalendarDays(endDate, startDate) + 1
@@ -207,6 +208,16 @@ export async function POST(request: Request) {
         user: { select: { name: true, email: true, role: true } },
         department: { select: { name: true } },
       },
+    })
+
+    await logEvent({
+      category: "LEAVE",
+      action: "Leave requested",
+      description: `${displayName(leave.user)} requested leave for ${leaveDateLabel(leave.startDate, leave.endDate)}${leave.reason ? ` — ${leave.reason}` : ""}`,
+      actor: sessionUser,
+      entityType: "Leave",
+      entityId: leave.id,
+      departmentId: leave.departmentId,
     })
 
     await notifyApprovers(leave)

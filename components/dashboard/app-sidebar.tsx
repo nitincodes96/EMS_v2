@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   LogOut,
   Settings,
+  ScrollText,
   Users,
   Watch,
   Calendar,
@@ -39,6 +40,7 @@ const NAV_ITEMS = {
     { title: "Attendance", url: "/admin/attendance", icon: Watch },
     { title: "Bookings", url: "/admin/bookings", icon: ClipboardList },
     { title: "Leave", url: "/admin/leave", icon: Calendar },
+    { title: "System Logs", url: "/admin/logs", icon: ScrollText },
     { title: "Settings", url: "/admin/settings", icon: Settings },
   ],
 
