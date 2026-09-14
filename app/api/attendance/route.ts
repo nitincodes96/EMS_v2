@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { startOfMonth, endOfMonth, format } from "date-fns"
 import prisma from "@/lib/prisma"
+import { getScheduleSettings, lateAfterMinutes as lateAfter } from "@/lib/schedule-settings"
 import { getSessionUser } from "@/lib/api-auth"
 
 // GET: the signed-in user's attendance records for a month, for calendar views.
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
   const to = endOfMonth(anchor)
   to.setHours(23, 59, 59, 999)
 
-  const [records, department] = await Promise.all([
+  const [records, schedule] = await Promise.all([
     prisma.attendance.findMany({
       where: { userId: sessionUser.id, checkInTime: { gte: from, lte: to } },
       orderBy: { checkInTime: "asc" },
@@ -41,15 +42,11 @@ export async function GET(request: Request) {
         flaggedOutsideGeofence: true,
       },
     }),
-    prisma.department.findUnique({
-      where: { id: sessionUser.departmentId },
-      select: { shiftStartTime: true, lateGraceMinutes: true },
-    }),
+    getScheduleSettings(),
   ])
 
   // A punch counts as late once it passes shift start + the grace window
-  const [shiftH, shiftM] = (department?.shiftStartTime ?? "09:00").split(":").map(Number)
-  const lateAfterMinutes = shiftH * 60 + shiftM + (department?.lateGraceMinutes ?? 0)
+  const lateAfterMinutes = lateAfter(schedule)
 
   return NextResponse.json({
     records: records.map((r) => {

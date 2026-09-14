@@ -28,62 +28,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     const description = (formData.get("description") as string) || null
-    const workingDays = (formData.get("workingDays") as string) || existing.workingDays
-    const shiftStartTime = (formData.get("shiftStartTime") as string) || existing.shiftStartTime
-    const shiftEndTime = (formData.get("shiftEndTime") as string) || existing.shiftEndTime
-    const lateGraceMinutes = parseInt((formData.get("lateGraceMinutes") as string) || String(existing.lateGraceMinutes), 10)
-    const facultyBookingLimitRaw = formData.get("facultyBookingLimit") as string | null
-    const facultyBookingLimit =
-      facultyBookingLimitRaw != null && facultyBookingLimitRaw !== ""
-        ? parseInt(facultyBookingLimitRaw, 10)
-        : existing.facultyBookingLimit
-    if (isNaN(facultyBookingLimit) || facultyBookingLimit < 0) {
-      return NextResponse.json({ error: "Booking limit must be a non-negative number" }, { status: 400 })
-    }
     const geofenceEnabledRaw = formData.get("geofenceEnabled") as string | null
     const geofenceEnabled = geofenceEnabledRaw != null ? geofenceEnabledRaw === "true" : existing.geofenceEnabled
-
-    const slotDurationRaw = formData.get("slotDurationMinutes") as string | null
-    const slotDurationMinutes =
-      slotDurationRaw != null && slotDurationRaw !== ""
-        ? parseInt(slotDurationRaw, 10)
-        : existing.slotDurationMinutes
-    if (isNaN(slotDurationMinutes) || slotDurationMinutes < 5 || slotDurationMinutes > 480) {
-      return NextResponse.json({ error: "Slot duration must be between 5 and 480 minutes" }, { status: 400 })
-    }
-
-    const bookingHorizonRaw = formData.get("bookingHorizonDays") as string | null
-    const bookingHorizonDays =
-      bookingHorizonRaw != null && bookingHorizonRaw !== ""
-        ? parseInt(bookingHorizonRaw, 10)
-        : existing.bookingHorizonDays
-    if (isNaN(bookingHorizonDays) || bookingHorizonDays < 1 || bookingHorizonDays > 90) {
-      return NextResponse.json({ error: "Booking window must be between 1 and 90 days" }, { status: 400 })
-    }
-
-    const bookingChangeCutoffRaw = formData.get("bookingChangeCutoffMinutes") as string | null
-    const bookingChangeCutoffMinutes =
-      bookingChangeCutoffRaw != null && bookingChangeCutoffRaw !== ""
-        ? parseInt(bookingChangeCutoffRaw, 10)
-        : existing.bookingChangeCutoffMinutes
-    if (isNaN(bookingChangeCutoffMinutes) || bookingChangeCutoffMinutes < 0 || bookingChangeCutoffMinutes > 2880) {
-      return NextResponse.json(
-        { error: "Change cutoff must be between 0 and 2880 minutes (48 hours)" },
-        { status: 400 }
-      )
-    }
-
-    // Optional lunch break — both times or neither (empty clears it)
-    const lunchStartRaw = ((formData.get("lunchStartTime") as string) || "").trim()
-    const lunchEndRaw = ((formData.get("lunchEndTime") as string) || "").trim()
-    if (Boolean(lunchStartRaw) !== Boolean(lunchEndRaw)) {
-      return NextResponse.json({ error: "Provide both lunch start and end, or leave both empty" }, { status: 400 })
-    }
-    if (lunchStartRaw && lunchEndRaw && lunchEndRaw <= lunchStartRaw) {
-      return NextResponse.json({ error: "Lunch end time must be after the start time" }, { status: 400 })
-    }
-    const lunchStartTime = lunchStartRaw || null
-    const lunchEndTime = lunchEndRaw || null
 
     let locations: LocationInput[] | null = null
     const locationsRaw = formData.get("locations") as string | null
@@ -107,17 +53,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         data: {
           name,
           description,
-          workingDays,
-          shiftStartTime,
-          shiftEndTime,
-          lateGraceMinutes,
-          facultyBookingLimit,
-          slotDurationMinutes,
-          bookingHorizonDays,
-          bookingChangeCutoffMinutes,
           geofenceEnabled,
-          lunchStartTime,
-          lunchEndTime,
           ...(logoUrl ? { logoUrl } : {}),
         },
       })
@@ -146,20 +82,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     await logEvent({
       category: "DEPARTMENT",
       action: "Department updated",
-      description: describeDepartmentChanges(existing, {
-        name,
-        workingDays,
-        shiftStartTime,
-        shiftEndTime,
-        lateGraceMinutes,
-        facultyBookingLimit,
-        slotDurationMinutes,
-        bookingHorizonDays,
-        bookingChangeCutoffMinutes,
-        geofenceEnabled,
-        lunchStartTime,
-        lunchEndTime,
-      }),
+      description: describeDepartmentChanges(existing, { name, geofenceEnabled }),
       actor: sessionUser,
       entityType: "Department",
       entityId: id,
@@ -175,36 +98,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
 /**
  * Names the settings that actually changed, so the audit trail reads
- * "Updated FSM: slot duration 30 min -> 60 min" rather than just "updated".
- * Falls back to a plain notice when only untracked fields (logo, description,
- * locations) moved.
+ * "Updated FSM: geo-fence on -> off" rather than just "updated". Falls back
+ * to a plain notice when only untracked fields (logo, description, locations)
+ * moved.
  */
 function describeDepartmentChanges(
   before: DepartmentSettings & { name: string },
   after: DepartmentSettings & { name: string }
 ): string {
-  const labels: Record<keyof DepartmentSettings, string> = {
-    workingDays: "working days",
-    shiftStartTime: "shift start",
-    shiftEndTime: "shift end",
-    lateGraceMinutes: "grace window",
-    facultyBookingLimit: "faculty booking limit",
-    slotDurationMinutes: "slot duration",
-    bookingHorizonDays: "booking window",
-    bookingChangeCutoffMinutes: "change cutoff",
-    geofenceEnabled: "geo-fence",
-    lunchStartTime: "lunch start",
-    lunchEndTime: "lunch end",
-  }
-
   const changes: string[] = []
   if (before.name !== after.name) {
     changes.push(`renamed to "${after.name}"`)
   }
-  for (const key of Object.keys(labels) as (keyof DepartmentSettings)[]) {
-    if (before[key] !== after[key]) {
-      changes.push(`${labels[key]} ${formatSetting(before[key])} \u2192 ${formatSetting(after[key])}`)
-    }
+  if (before.geofenceEnabled !== after.geofenceEnabled) {
+    changes.push(`geo-fence ${before.geofenceEnabled ? "on" : "off"} \u2192 ${after.geofenceEnabled ? "on" : "off"}`)
   }
 
   return changes.length > 0
@@ -213,21 +120,5 @@ function describeDepartmentChanges(
 }
 
 type DepartmentSettings = {
-  workingDays: string
-  shiftStartTime: string
-  shiftEndTime: string
-  lateGraceMinutes: number
-  facultyBookingLimit: number
-  slotDurationMinutes: number
-  bookingHorizonDays: number
-  bookingChangeCutoffMinutes: number
   geofenceEnabled: boolean
-  lunchStartTime: string | null
-  lunchEndTime: string | null
-}
-
-function formatSetting(value: string | number | boolean | null): string {
-  if (value === null || value === "") return "none"
-  if (typeof value === "boolean") return value ? "on" : "off"
-  return String(value)
 }

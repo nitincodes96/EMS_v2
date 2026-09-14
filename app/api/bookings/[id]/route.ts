@@ -12,16 +12,18 @@ import { logEvent } from "@/lib/system-log"
 import {
   checkBookingHorizon,
   checkSlotAvailability,
+  checkSlotCount,
   isWithinChangeWindow,
   hasStarted,
   toBookingDate,
-  DEFAULT_BOOKING_CHANGE_CUTOFF_MINUTES,
 } from "@/lib/booking-rules"
+import { getScheduleSettings } from "@/lib/schedule-settings"
+import { activeNoticesFor, noticeWindow, windowBlocksBooking, windowLabel } from "@/lib/unavailability"
 
 const BOOKING_INCLUDE = {
   faculty: { select: { id: true, name: true, email: true, photoUrl: true } },
   pa: { select: { id: true, name: true, email: true, phoneNumber: true, photoUrl: true } },
-  department: { select: { id: true, name: true, bookingChangeCutoffMinutes: true } },
+  department: { select: { id: true, name: true } },
 } as const
 
 function slotLabel(start: Date, end: Date) {
@@ -76,12 +78,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    const cutoffMinutes = booking.department.bookingChangeCutoffMinutes
+    const [{ bookingChangeCutoffMinutes: cutoffMinutes }, notices] = await Promise.all([
+      getScheduleSettings(),
+      // Only an open booking can still be disturbed by the PA being away
+      booking.status === "BOOKED" ? activeNoticesFor(booking.paId, booking.date) : Promise.resolve([]),
+    ])
+    const clash = notices.map(noticeWindow).find((w) => windowBlocksBooking(w, booking.startTime, booking.endTime))
 
     return NextResponse.json({
       booking,
       rules: {
         cutoffMinutes,
+        // The PA has given notice that they won't be in for this slot
+        paUnavailable: clash ? { wholeDay: clash.wholeDay, window: windowLabel(clash), reason: clash.reason } : null,
         // Computed server-side so the client can't fake an open window
         canChange: booking.status === "BOOKED" && isWithinChangeWindow(booking.startTime, cutoffMinutes),
         // Outcome can only be recorded once the slot has actually begun
@@ -109,13 +118,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Booking not found" }, { status: 404 })
   }
 
-  // Backs both the change-cutoff and booking-horizon checks below — fetched
-  // once here since several branches (reschedule, cancel) need it.
-  const department = await prisma.department.findUnique({
-    where: { id: booking.departmentId },
-    select: { bookingHorizonDays: true, bookingChangeCutoffMinutes: true },
-  })
-  const cutoffMinutes = department?.bookingChangeCutoffMinutes ?? DEFAULT_BOOKING_CHANGE_CUTOFF_MINUTES
+  // Backs the change-cutoff, booking-horizon and slot-count checks below —
+  // fetched once here since several branches (reschedule, cancel) need it.
+  const schedule = await getScheduleSettings()
+  const cutoffMinutes = schedule.bookingChangeCutoffMinutes
 
   // The booking's faculty or an admin may change it; the assigned PA may only
   // self-report their work (handled as PA_REPORT below).
@@ -130,6 +136,54 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const body = await request.json()
     const rawRemark = typeof body.remark === "string" ? body.remark.trim() : ""
     const remark = rawRemark ? rawRemark.slice(0, 1000) : null
+
+    // -------------------------------------------------------- PA acknowledge
+    // The assigned PA marks the booking as seen. Nothing to accept — the
+    // booking is already confirmed — this just tells the faculty it's been
+    // read. Idempotent: a second call keeps the original timestamp.
+    if (body.action === "ACKNOWLEDGE") {
+      if (!isAssignedPa) {
+        return NextResponse.json({ error: "Only the assigned PA can acknowledge a booking" }, { status: 403 })
+      }
+      if (booking.status !== "BOOKED") {
+        return NextResponse.json(
+          { error: `This booking is already ${booking.status.toLowerCase()}` },
+          { status: 409 }
+        )
+      }
+      if (booking.paAcknowledgedAt) {
+        const current = await prisma.booking.findUnique({ where: { id }, include: BOOKING_INCLUDE })
+        return NextResponse.json({ booking: current })
+      }
+
+      const updated = await prisma.booking.update({
+        where: { id },
+        data: { paAcknowledgedAt: new Date() },
+        include: BOOKING_INCLUDE,
+      })
+
+      await prisma.bookingLog.create({
+        data: {
+          bookingId: id,
+          action: "ACKNOWLEDGED",
+          actorId: sessionUser.id,
+          message: "PA acknowledged the booking",
+        },
+      })
+
+      await createNotification({
+        userId: booking.facultyId,
+        type: "BOOKING",
+        title: "PA has seen your booking",
+        message: `${displayName(updated.pa)} acknowledged your ${dayLabel(booking.date)} ${slotLabel(
+          booking.startTime,
+          booking.endTime
+        )} booking.`,
+        refId: id,
+      })
+
+      return NextResponse.json({ booking: updated })
+    }
 
     // ------------------------------------------------------------ PA report
     // The assigned PA reports whether they carried out the work. This is
@@ -222,7 +276,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
       const updated = await prisma.booking.update({
         where: { id },
-        data: { rating, ratedAt: new Date() },
+        data: { rating, ratedAt: new Date(), ratingRemark: remark },
         include: BOOKING_INCLUDE,
       })
 
@@ -276,7 +330,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           { status: 409 }
         )
       }
-      if (workType != null && !isValidWorkType(workType)) {
+      if (workType != null && !(await isValidWorkType(workType))) {
         return NextResponse.json({ error: "Invalid work type" }, { status: 400 })
       }
 
@@ -284,9 +338,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const newStart = new Date(`${date}T${startTime}`)
       const newEnd = new Date(`${date}T${endTime}`)
 
-      const horizonError = checkBookingHorizon(newDate, department?.bookingHorizonDays ?? 7)
+      const horizonError = checkBookingHorizon(newDate, schedule.bookingHorizonDays)
       if (horizonError) {
         return NextResponse.json({ error: horizonError.error }, { status: horizonError.status })
+      }
+
+      const slotCountError = checkSlotCount(newStart, newEnd, schedule.slotDurationMinutes, schedule.maxSlotsPerBooking)
+      if (slotCountError) {
+        return NextResponse.json({ error: slotCountError.error }, { status: slotCountError.status })
       }
 
       const unavailable = await checkSlotAvailability({
@@ -309,6 +368,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           date: newDate,
           startTime: newStart,
           endTime: newEnd,
+          // A new slot is effectively a new booking to the PA — ask them to
+          // acknowledge it again.
+          paAcknowledgedAt: null,
           ...(workType != null ? { workType } : {}),
           ...(task?.trim() ? { task: task.trim() } : {}),
         },
@@ -403,7 +465,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       where: { id },
       data: {
         status,
-        ...(ratingOnComplete != null ? { rating: ratingOnComplete, ratedAt: new Date() } : {}),
+        // The remark that accompanies a rating doubles as the written review
+        ...(ratingOnComplete != null ? { rating: ratingOnComplete, ratedAt: new Date(), ratingRemark: remark } : {}),
       },
       include: BOOKING_INCLUDE,
     })

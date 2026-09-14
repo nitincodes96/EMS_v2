@@ -7,6 +7,7 @@ import { format, differenceInMinutes } from "date-fns"
 import {
   AlertTriangle,
   ArrowLeft,
+  CalendarOff,
   Building2,
   CalendarClock,
   CalendarDays,
@@ -36,7 +37,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
-import { WORK_TYPES } from "@/lib/work-types"
+import { PaSeenBadge } from "@/components/shared/pa-seen-badge"
+import { useWorkTypes } from "@/hooks/use-work-types"
 import {
   buildSlots,
   DEFAULT_SLOT_MINUTES,
@@ -58,6 +60,7 @@ type LogAction =
   | "MARKED_INCOMPLETE"
   | "RATED"
   | "PA_REPORTED"
+  | "ACKNOWLEDGED"
 
 type BookingLog = {
   id: string
@@ -77,6 +80,7 @@ type BookingDetail = {
   task: string
   status: "BOOKED" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
   rating: number | null
+  paAcknowledgedAt: string | null
   ratedAt: string | null
   paStatus: "DONE" | "NOT_DONE" | null
   paRemark: string | null
@@ -98,9 +102,11 @@ type BookingDetail = {
 type SlotsResponse = {
   bookingWindow: { start: string; end: string; enabled: boolean }
   slotDurationMinutes: number
+  maxSlotsPerBooking: number
   lunch: { start: string | null; end: string | null }
   dayUnavailable: boolean
   dayUnavailableReason: string | null
+  unavailable: { id: string; start: string; end: string; reason: string | null }[]
   booked: { id: string; start: string; end: string; status: string }[]
 }
 
@@ -123,6 +129,7 @@ const LOG_STYLES: Record<LogAction, string> = {
   MARKED_INCOMPLETE: "bg-amber-50 text-amber-700",
   RATED: "bg-yellow-50 text-yellow-700",
   PA_REPORTED: "bg-sky-50 text-sky-700",
+  ACKNOWLEDGED: "bg-emerald-50 text-emerald-700",
 }
 
 const LOG_LABELS: Record<LogAction, string> = {
@@ -134,6 +141,7 @@ const LOG_LABELS: Record<LogAction, string> = {
   MARKED_INCOMPLETE: "Marked not completed",
   RATED: "Rated",
   PA_REPORTED: "PA update",
+  ACKNOWLEDGED: "Seen by PA",
 }
 
 const OUTCOME_COPY: Record<
@@ -221,6 +229,7 @@ export default function BookingDetailPage() {
 
   const [booking, setBooking] = useState<BookingDetail | null>(null)
   const [canChange, setCanChange] = useState(false)
+  const [paUnavailable, setPaUnavailable] = useState<{ wholeDay: boolean; window: string; reason: string | null } | null>(null)
   const [canRecordOutcome, setCanRecordOutcome] = useState(false)
   const [cutoffMinutes, setCutoffMinutes] = useState(60)
   const [loading, setLoading] = useState(true)
@@ -244,8 +253,10 @@ export default function BookingDetailPage() {
         canChange?: boolean
         canRecordOutcome?: boolean
         cutoffMinutes?: number
+        paUnavailable?: { wholeDay: boolean; window: string; reason: string | null } | null
       }
       setBooking(json.booking as BookingDetail)
+      setPaUnavailable(rules.paUnavailable ?? null)
       setCanChange(Boolean(rules.canChange))
       setCanRecordOutcome(Boolean(rules.canRecordOutcome))
       setCutoffMinutes(rules.cutoffMinutes ?? 60)
@@ -340,6 +351,22 @@ export default function BookingDetailPage() {
         <ArrowLeft className="h-4 w-4" /> All bookings
       </Link>
 
+      {paUnavailable && (
+        <div className="mt-4 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+          <CalendarOff className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+          <div className="text-sm text-rose-800">
+            <p className="font-semibold">
+              {booking.pa.name || booking.pa.email} has said they won&apos;t be available{" "}
+              {paUnavailable.wholeDay ? "on this day" : `${paUnavailable.window} on this day`}.
+            </p>
+            <p className="mt-0.5 text-xs text-rose-700">
+              {paUnavailable.reason ? `Reason: ${paUnavailable.reason}. ` : ""}
+              This booking hasn&apos;t been changed — you may want to reschedule it or book another PA.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="mt-4 grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
           {/* Hero */}
@@ -374,6 +401,7 @@ export default function BookingDetailPage() {
                 >
                   {booking.status}
                 </span>
+                <PaSeenBadge acknowledgedAt={booking.paAcknowledgedAt} status={booking.status} size="md" />
                 {booking.rating != null && <StarDisplay value={booking.rating} size="md" />}
               </div>
             </div>
@@ -897,6 +925,11 @@ function RescheduleDialog({
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<number[]>([])
   const [workType, setWorkType] = useState(booking.workType ?? "")
+  const { workTypes } = useWorkTypes()
+  // A type that's since been removed from the settings still needs to be
+  // selectable here, or the dropdown would silently show blank.
+  const workTypeOptions =
+    booking.workType && !workTypes.includes(booking.workType) ? [booking.workType, ...workTypes] : workTypes
   const [remark, setRemark] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
@@ -935,6 +968,13 @@ function RescheduleDialog({
     () => (data?.booked ?? []).map((b) => ({ startMin: parseHHMM(b.start), endMin: parseHHMM(b.end) })),
     [data]
   )
+  // Part-day windows the PA has flagged as unavailable
+  const awayRanges = useMemo(
+    () => (data?.unavailable ?? []).map((u) => ({ startMin: parseHHMM(u.start), endMin: parseHHMM(u.end) })),
+    [data]
+  )
+  // Cap on consecutive slots in one booking (0 = unlimited)
+  const maxSlots = data?.maxSlotsPerBooking ?? 0
 
   const isToday = date === todayStr
   const nowMin = useMemo(() => {
@@ -946,12 +986,13 @@ function RescheduleDialog({
   const bookingDisabled = data ? !data.bookingWindow.enabled : false
 
   const slotState = useCallback(
-    (slot: Slot): "available" | "booked" | "past" => {
+    (slot: Slot): "available" | "booked" | "unavailable" | "past" => {
+      if (awayRanges.some((a) => a.startMin < slot.endMin && a.endMin > slot.startMin)) return "unavailable"
       if (bookedRanges.some((b) => b.startMin < slot.endMin && b.endMin > slot.startMin)) return "booked"
       if (isToday && slot.startMin <= nowMin) return "past"
       return "available"
     },
-    [bookedRanges, isToday, nowMin]
+    [awayRanges, bookedRanges, isToday, nowMin]
   )
 
   const isSelectable = useCallback(
@@ -984,8 +1025,13 @@ function RescheduleDialog({
     }
     const lo = Math.min(min, i)
     const hi = Math.max(max, i)
-    if (allSelectable(lo, hi)) setSelected(range(lo, hi))
-    else setSelected([i])
+    if (!allSelectable(lo, hi)) return setSelected([i])
+    // Extending past the per-booking cap starts a fresh selection instead
+    if (maxSlots > 0 && hi - lo + 1 > maxSlots) {
+      toast.error(`A booking can cover at most ${maxSlots} slot${maxSlots === 1 ? "" : "s"}.`)
+      return setSelected([i])
+    }
+    setSelected(range(lo, hi))
   }
 
   const hasSelection = selected.length > 0
@@ -1004,7 +1050,9 @@ function RescheduleDialog({
           date,
           startTime: minutesToHHMM(selStart),
           endTime: minutesToHHMM(selEnd),
-          workType: workType || undefined,
+          // Only send a type when it actually changed — re-sending a type that
+          // has since been removed from the settings would fail validation.
+          workType: workType && workType !== booking.workType ? workType : undefined,
           remark: remark.trim() || undefined,
         }),
       })
@@ -1063,7 +1111,8 @@ function RescheduleDialog({
             ) : (
               <>
                 <p className="mt-1.5 text-[11px] text-slate-400">
-                  Each slot is {formatDuration(data?.slotDurationMinutes ?? DEFAULT_SLOT_MINUTES)}.
+                  Each slot is {formatDuration(data?.slotDurationMinutes ?? DEFAULT_SLOT_MINUTES)}
+                  {maxSlots > 0 ? ` — up to ${maxSlots} consecutive slot${maxSlots === 1 ? "" : "s"} per booking.` : "."}
                 </p>
                 <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {slots.map((slot, i) => {
@@ -1077,15 +1126,23 @@ function RescheduleDialog({
                         disabled={disabled}
                         onClick={() => toggleSlot(i)}
                         title={
-                          state === "booked" ? "Already booked" : state === "past" ? "Time has passed" : undefined
+                          state === "booked"
+                            ? "Already booked"
+                            : state === "unavailable"
+                              ? "PA has marked this time as unavailable"
+                              : state === "past"
+                                ? "Time has passed"
+                                : undefined
                         }
                         className={cn(
                           "whitespace-nowrap rounded-lg border px-2 py-2 text-[11px] font-medium transition-colors",
                           isSel
                             ? "border-indigo-600 bg-indigo-600 text-white"
-                            : disabled
-                              ? "cursor-not-allowed border-slate-100 bg-slate-100 text-slate-300 line-through"
-                              : "cursor-pointer border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50"
+                            : state === "unavailable"
+                              ? "cursor-not-allowed border-rose-100 bg-rose-50 text-rose-300 line-through"
+                              : disabled
+                                ? "cursor-not-allowed border-slate-100 bg-slate-100 text-slate-300 line-through"
+                                : "cursor-pointer border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50"
                         )}
                       >
                         {slotRangeLabel(slot.startMin, slot.endMin)}
@@ -1114,9 +1171,10 @@ function RescheduleDialog({
               className="mt-1 w-full cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400"
             >
               <option value="">Keep current</option>
-              {WORK_TYPES.map((wt) => (
+              {workTypeOptions.map((wt) => (
                 <option key={wt} value={wt}>
                   {wt}
+                  {wt === booking.workType && !workTypes.includes(wt) ? " (no longer offered)" : ""}
                 </option>
               ))}
             </select>

@@ -7,6 +7,7 @@ import { differenceInMinutes, format } from "date-fns"
 import { toast } from "react-hot-toast"
 import {
   ArrowLeft,
+  CalendarOff,
   Ban,
   Building2,
   CalendarClock,
@@ -32,6 +33,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
+import { PaSeenBadge } from "@/components/shared/pa-seen-badge"
 import { cn } from "@/lib/utils"
 
 type LogAction =
@@ -43,6 +45,7 @@ type LogAction =
   | "MARKED_INCOMPLETE"
   | "RATED"
   | "PA_REPORTED"
+  | "ACKNOWLEDGED"
 
 type BookingLog = {
   id: string
@@ -63,6 +66,8 @@ type BookingDetail = {
   status: "BOOKED" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
   rating: number | null
   ratedAt: string | null
+  ratingRemark: string | null
+  paAcknowledgedAt: string | null
   paStatus: "DONE" | "NOT_DONE" | null
   paRemark: string | null
   paMarkedAt: string | null
@@ -97,6 +102,7 @@ const LOG_STYLES: Record<LogAction, string> = {
   MARKED_INCOMPLETE: "bg-amber-50 text-amber-700",
   RATED: "bg-yellow-50 text-yellow-700",
   PA_REPORTED: "bg-sky-50 text-sky-700",
+  ACKNOWLEDGED: "bg-emerald-50 text-emerald-700",
 }
 
 const LOG_LABELS: Record<LogAction, string> = {
@@ -108,6 +114,7 @@ const LOG_LABELS: Record<LogAction, string> = {
   MARKED_INCOMPLETE: "Marked not completed",
   RATED: "Rated",
   PA_REPORTED: "PA update",
+  ACKNOWLEDGED: "Seen by PA",
 }
 
 async function safeJson(res: Response): Promise<Record<string, unknown> | null> {
@@ -126,6 +133,7 @@ export default function AdminBookingDetailPage() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [closeOpen, setCloseOpen] = useState(false)
+  const [paUnavailable, setPaUnavailable] = useState<{ wholeDay: boolean; window: string; reason: string | null } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -137,6 +145,8 @@ export default function AdminBookingDetailPage() {
         return
       }
       setBooking(json.booking as BookingDetail)
+      const rules = (json.rules ?? {}) as { paUnavailable?: typeof paUnavailable }
+      setPaUnavailable(rules.paUnavailable ?? null)
     } finally {
       setLoading(false)
     }
@@ -165,6 +175,12 @@ export default function AdminBookingDetailPage() {
   const start = new Date(booking.startTime)
   const end = new Date(booking.endTime)
   const hours = Math.max(1, Math.round(differenceInMinutes(end, start) / 60))
+  // The written review lives on the booking; bookings rated before that column
+  // existed only have it as the remark on their RATED / COMPLETED log entry.
+  const review =
+    booking.ratingRemark?.trim() ||
+    booking.logs.find((l) => (l.action === "RATED" || l.action === "COMPLETED") && l.remark?.trim())?.remark?.trim() ||
+    null
 
   return (
     <div>
@@ -176,6 +192,22 @@ export default function AdminBookingDetailPage() {
       </Link>
 
       <div className="mt-4 space-y-6">
+        {paUnavailable && (
+          <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+            <CalendarOff className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+            <div className="text-sm text-rose-800">
+              <p className="font-semibold">
+                {booking.pa.name || booking.pa.email} has said they won&apos;t be available{" "}
+                {paUnavailable.wholeDay ? "on this day" : `${paUnavailable.window} on this day`}.
+              </p>
+              <p className="mt-0.5 text-xs text-rose-700">
+                {paUnavailable.reason ? `Reason: ${paUnavailable.reason}. ` : ""}
+                The faculty has been notified; the booking itself is unchanged.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Hero */}
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center gap-4 p-5">
@@ -208,6 +240,7 @@ export default function AdminBookingDetailPage() {
               >
                 {booking.status}
               </span>
+              <PaSeenBadge acknowledgedAt={booking.paAcknowledgedAt} status={booking.status} size="md" />
               {booking.rating != null && (
                 <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2 py-0.5">
                   <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
@@ -283,6 +316,46 @@ export default function AdminBookingDetailPage() {
             </p>
           </div>
         </div>
+
+        {/* Faculty's rating + written review. Older bookings rated before the
+            review column existed fall back to the remark on the RATED log entry. */}
+        {booking.rating != null && (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3.5">
+              <Star className="h-4 w-4 text-amber-500" />
+              <h2 className="text-sm font-semibold text-slate-900">Faculty&apos;s review</h2>
+            </div>
+            <div className="px-5 py-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="flex gap-0.5" aria-label={`${booking.rating} out of 5 stars`}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Star
+                      key={n}
+                      className={cn(
+                        "h-4 w-4",
+                        n <= booking.rating! ? "fill-amber-400 text-amber-400" : "text-slate-200"
+                      )}
+                    />
+                  ))}
+                </span>
+                <span className="text-sm font-semibold text-amber-700">{booking.rating}/5</span>
+                {booking.ratedAt && (
+                  <span className="text-xs text-slate-400">
+                    by {booking.faculty.name || booking.faculty.email} ·{" "}
+                    {format(new Date(booking.ratedAt), "MMM d, yyyy 'at' h:mm a")}
+                  </span>
+                )}
+              </div>
+              {review ? (
+                <p className="mt-2 rounded-lg bg-amber-50/60 px-3 py-2 text-sm italic text-slate-700">
+                  &ldquo;{review}&rdquo;
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-slate-400">No written review was left with the rating.</p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* PA's report */}
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">

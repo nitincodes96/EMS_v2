@@ -7,7 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
-import { Pencil } from "lucide-react"
+import { Loader2, Pencil, Send } from "lucide-react"
+import { toast } from "react-hot-toast"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
 import { cn } from "@/lib/utils"
 import type { User, Department } from "@/types"
@@ -49,6 +50,23 @@ export function UserTable({
   attendanceLinkPrefix: string
 }) {
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+  const [resendingUserId, setResendingUserId] = useState<string | null>(null)
+
+  // For users still on "Invited": issue a fresh link and send the email again.
+  const handleResendInvite = async (user: User) => {
+    setResendingUserId(user.id)
+    try {
+      const res = await fetch(`/api/users/${user.id}/resend-invite`, { method: "POST" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Failed to resend invite")
+      toast.success(`Invite re-sent to ${user.email}`)
+      onUserUpdated()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to resend invite")
+    } finally {
+      setResendingUserId(null)
+    }
+  }
 
   const handleToggleStatus = async (userId: string, isActive: boolean) => {
     setUpdatingUserId(userId)
@@ -113,7 +131,24 @@ export function UserTable({
                       {ROLE_LABEL[user.role] ?? user.role}
                     </span>
                   </TableCell>
-                  <TableCell className="hidden sm:table-cell">{getStatusBadge(user.status)}</TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    <div className="flex items-center gap-1.5">
+                      {getStatusBadge(user.status)}
+                      {user.status === "INVITED" && user.email && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Send the invite email again with a fresh link"
+                          onClick={() => handleResendInvite(user)}
+                          disabled={resendingUserId === user.id || !user.isActive}
+                          className="h-6 gap-1 px-1.5 text-[11px] text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer"
+                        >
+                          {resendingUserId === user.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                          Resend
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="hidden text-xs text-slate-500 sm:table-cell">
                     {format(new Date(user.createdAt), "MMM d, yyyy")}
                   </TableCell>

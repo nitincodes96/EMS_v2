@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { getSessionUser } from "@/lib/api-auth"
 import { countActiveFacultyBookings } from "@/lib/booking-rules"
+import { getScheduleSettings } from "@/lib/schedule-settings"
 
 export async function GET() {
   const sessionUser = await getSessionUser()
@@ -9,15 +10,18 @@ export async function GET() {
     return NextResponse.json({ error: "No department associated with this account" }, { status: 404 })
   }
 
-  const department = await prisma.department.findUnique({
-    where: { id: sessionUser.departmentId },
-    include: {
-      locations: true,
-      holidays: {
-        orderBy: { date: "asc" },
+  const [department, schedule] = await Promise.all([
+    prisma.department.findUnique({
+      where: { id: sessionUser.departmentId },
+      include: {
+        locations: true,
+        holidays: {
+          orderBy: { date: "asc" },
+        },
       },
-    },
-  })
+    }),
+    getScheduleSettings(),
+  ])
 
   if (!department) {
     return NextResponse.json({ error: "Department not found" }, { status: 404 })
@@ -33,11 +37,13 @@ export async function GET() {
       name: department.name,
       description: department.description,
       logoUrl: department.logoUrl,
-      shiftStartTime: department.shiftStartTime,
-      shiftEndTime: department.shiftEndTime,
-      workingDays: department.workingDays,
+      // Schedule values are organization-wide but surfaced here under the
+      // same keys so every dashboard keeps reading them from one place.
+      shiftStartTime: schedule.shiftStartTime,
+      shiftEndTime: schedule.shiftEndTime,
+      workingDays: schedule.workingDays,
       geofenceEnabled: department.geofenceEnabled,
-      facultyBookingLimit: department.facultyBookingLimit,
+      facultyBookingLimit: schedule.facultyBookingLimit,
       facultyActiveBookingCount: activeBookingCount,
       holidays: department.holidays.map((holiday) => ({
         id: holiday.id,

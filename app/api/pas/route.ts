@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { getSessionUser, hasRole } from "@/lib/api-auth"
 import { toBookingDate } from "@/lib/booking-rules"
+import { noticeWindow, windowBlocksRange } from "@/lib/unavailability"
+import { parseHHMM } from "@/lib/booking-slots"
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
 
@@ -13,7 +15,7 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
 //
 // Optional availability filter:
 //   ?date=YYYY-MM-DD                → each PA gets an availability status for
-//                                     that day (free / booked / on-leave)
+//                                     that day (free / booked / on-leave / unavailable)
 //   &startTime=HH:mm&endTime=HH:mm  → status reflects that exact slot instead
 //                                     of the whole day
 export async function GET(request: Request) {
@@ -78,7 +80,7 @@ export async function GET(request: Request) {
 
   const paIds = pas.map((p) => p.id)
 
-  const [leaves, bookings] = await Promise.all([
+  const [leaves, notices, bookings] = await Promise.all([
     prisma.leave.findMany({
       where: {
         userId: { in: paIds },
@@ -87,6 +89,10 @@ export async function GET(request: Request) {
         endDate: { gte: bookingDate },
       },
       select: { userId: true },
+    }),
+    prisma.unavailabilityNotice.findMany({
+      where: { userId: { in: paIds }, date: bookingDate, status: "ACTIVE" },
+      select: { id: true, userId: true, startTime: true, endTime: true, reason: true },
     }),
     prisma.booking.findMany({
       where: {
@@ -99,6 +105,12 @@ export async function GET(request: Request) {
   ])
 
   const onLeaveSet = new Set(leaves.map((l) => l.userId))
+  const noticesByPa = new Map<string, ReturnType<typeof noticeWindow>[]>()
+  for (const n of notices) {
+    const list = noticesByPa.get(n.userId) ?? []
+    list.push(noticeWindow(n))
+    noticesByPa.set(n.userId, list)
+  }
   const bookingsByPa = new Map<string, { startTime: Date; endTime: Date }[]>()
   for (const b of bookings) {
     const list = bookingsByPa.get(b.paId) ?? []
@@ -108,16 +120,23 @@ export async function GET(request: Request) {
 
   const pasWithAvailability = pas.map((pa) => {
     const dayBookings = bookingsByPa.get(pa.id) ?? []
-    let status: "free" | "booked" | "on-leave"
+    const dayNotices = noticesByPa.get(pa.id) ?? []
+    let status: "free" | "booked" | "on-leave" | "unavailable"
 
     if (onLeaveSet.has(pa.id)) {
       status = "on-leave"
+    } else if (dayNotices.some((w) => w.wholeDay)) {
+      // The PA said they won't be in at all that day
+      status = "unavailable"
     } else if (hasSlot && slotOk) {
-      // Busy only if a booking overlaps the requested slot
+      // Unavailable if a notice covers the slot; busy if a booking overlaps it
+      const away = dayNotices.some((w) =>
+        windowBlocksRange(w, parseHHMM(startTimeParam!), parseHHMM(endTimeParam!))
+      )
       const clash = dayBookings.some((b) => b.startTime < slotEnd! && b.endTime > slotStart!)
-      status = clash ? "booked" : "free"
+      status = away ? "unavailable" : clash ? "booked" : "free"
     } else {
-      // Whole-day view: available unless fully unavailable (on leave handled above)
+      // Whole-day view: available unless fully unavailable (handled above)
       status = "free"
     }
 

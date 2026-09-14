@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { eachDayOfInterval, format, isAfter, startOfDay, subDays } from "date-fns"
 import prisma from "@/lib/prisma"
+import { getScheduleSettings, lateAfterMinutes as lateAfter, workingDaySet } from "@/lib/schedule-settings"
 import { getSessionUser } from "@/lib/api-auth"
 
 // GET: the signed-in user's own attendance history for the Attendance page.
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
     return true
   }
 
-  const [user, department, attendance, leaves] = await Promise.all([
+  const [user, department, schedule, attendance, leaves] = await Promise.all([
     prisma.user.findUnique({
       where: { id: sessionUser.id },
       select: { createdAt: true, joiningDate: true },
@@ -39,12 +40,10 @@ export async function GET(request: Request) {
     prisma.department.findUnique({
       where: { id: sessionUser.departmentId },
       select: {
-        shiftStartTime: true,
-        lateGraceMinutes: true,
-        workingDays: true,
         holidays: { select: { date: true } },
       },
     }),
+    getScheduleSettings(),
     prisma.attendance.findMany({
       where: { userId: sessionUser.id },
       orderBy: { checkInTime: "desc" },
@@ -63,9 +62,8 @@ export async function GET(request: Request) {
     }),
   ])
 
-  // Late once the punch passes shift start + the department's grace window
-  const [shiftH, shiftM] = (department?.shiftStartTime ?? "09:00").split(":").map(Number)
-  const lateAfterMinutes = shiftH * 60 + shiftM + (department?.lateGraceMinutes ?? 0)
+  // Late once the punch passes shift start + the organization's grace window
+  const lateAfterMinutes = lateAfter(schedule)
 
   // ------------------------------------------------------------- punches
   type PunchEntry = {
@@ -103,7 +101,7 @@ export async function GET(request: Request) {
   const allPunchedDays = new Set(attendance.map((a) => format(a.checkInTime, "yyyy-MM-dd")))
 
   // -------------------------------------------------- synthesized absences
-  const workingDays = new Set((department?.workingDays ?? "Mon,Tue,Wed,Thu,Fri").split(",").map((d) => d.trim()))
+  const workingDays = workingDaySet(schedule.workingDays)
 
   const holidayKeys = new Set((department?.holidays ?? []).map((h) => format(h.date, "yyyy-MM-dd")))
 

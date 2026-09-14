@@ -11,7 +11,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
@@ -43,7 +42,6 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-  Clock,
   Pencil,
   AlertTriangle,
   Search,
@@ -142,11 +140,7 @@ export default function DepartmentDetailsPage() {
   const [error, setError] = useState('')
 
   // ── Add User state ──
-  const [showAddDialog, setShowAddDialog] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [newUser, setNewUser] = useState({ email: '', name: '', phoneNumber: '' })
-  const [photoFile, setPhotoFile] = useState<File | null>(null)
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
 
   // ── Staff management state ──
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
@@ -201,7 +195,7 @@ export default function DepartmentDetailsPage() {
     fetchDetails(true)
   }, [slug])
 
-  const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>, mode: 'create' | 'edit') => {
+  const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) {
@@ -215,52 +209,13 @@ export default function DepartmentDetailsPage() {
 
     const reader = new FileReader()
     reader.onloadend = () => {
-      if (mode === 'create') {
-        setPhotoFile(file)
-        setPhotoPreview(reader.result as string)
-      } else {
-        setEditPhotoFile(file)
-        setEditPhotoPreview(reader.result as string)
-      }
+      setEditPhotoFile(file)
+      setEditPhotoPreview(reader.result as string)
     }
     reader.readAsDataURL(file)
   }
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
-
-  const handleAddUser = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!org) return
-    setSubmitting(true)
-    setError('')
-    try {
-      const formData = new FormData()
-      // Only Project Assistants are invited here — Faculty arrive via Kerberos,
-      // and Moderators are org-wide so they aren't tied to a department.
-      formData.append('role', 'PROJECT_ASSISTANT')
-      formData.append('departmentId', org.id)
-      formData.append('email', newUser.email)
-      formData.append('name', newUser.name)
-      formData.append('phoneNumber', newUser.phoneNumber)
-      if (photoFile) formData.append('photo', photoFile)
-
-      const response = await fetch('/api/users', {
-        method: 'POST',
-        body: formData,
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Failed to create user')
-      setNewUser({ email: '', name: '', phoneNumber: '' })
-      setPhotoFile(null)
-      setPhotoPreview(null)
-      setShowAddDialog(false)
-      fetchDetails()
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to create user')
-    } finally {
-      setSubmitting(false)
-    }
-  }
 
   const handleToggleStatus = (userId: string, isActive: boolean) => {
     setConfirmAction({ userId, isActive })
@@ -483,77 +438,8 @@ export default function DepartmentDetailsPage() {
               <span className="text-xs font-semibold text-emerald-600">{org.attendances.length}</span>
               <span className="text-[10px] text-emerald-500">present</span>
             </div>
-            {org.leaves.length > 0 && (
-              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-100 rounded-full px-2.5 py-1">
-                <Clock className="h-3 w-3 text-amber-500" />
-                <span className="text-xs font-semibold text-amber-600">{org.leaves.length}</span>
-                <span className="text-[10px] text-amber-500">pending</span>
-              </div>
-            )}
           </div>
 
-          {/* Add User Dialog */}
-          <Dialog
-            open={showAddDialog}
-            onOpenChange={(open) => {
-              setShowAddDialog(open)
-              if (!open) {
-                setPhotoFile(null)
-                setPhotoPreview(null)
-              }
-            }}
-          >
-            <DialogTrigger
-              render={
-                <Button
-                  className="gap-1.5 text-white cursor-pointer h-8 text-xs"
-                  style={{ backgroundColor: 'var(--theme)' }}
-                />
-              }
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Invite User
-            </DialogTrigger>
-            <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Invite User to {org.name}</DialogTitle>
-                <DialogDescription>
-                  An invite email will be sent to the user. They will set their own password after
-                  accepting. Faculty are created automatically on their first Kerberos login.
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleAddUser} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input id="name" placeholder="Full Name" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} disabled={submitting} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" placeholder="email@example.com" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required disabled={submitting} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phoneNumber">Phone Number (optional)</Label>
-                  <Input id="phoneNumber" placeholder="10-digit mobile" value={newUser.phoneNumber} onChange={(e) => setNewUser({ ...newUser, phoneNumber: e.target.value })} disabled={submitting} />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="photo">Photo</Label>
-                  <div className="flex items-center gap-3">
-                    <EntityAvatar name={newUser.name} fallbackText={newUser.email || 'User'} imageUrl={photoPreview} className="h-12 w-12 border border-slate-200" />
-                    <Input id="photo" type="file" accept="image/*" onChange={(e) => handlePhotoChange(e, 'create')} />
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="outline" className="cursor-pointer" onClick={() => setShowAddDialog(false)} disabled={submitting}>Cancel</Button>
-                  <Button type="submit" className="text-white cursor-pointer" style={{ backgroundColor: 'var(--theme)' }} disabled={submitting}>
-                    {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2 text-white" /> : <Plus className="h-4 w-4 mr-2" />}
-                    Create Account
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
 
@@ -673,7 +559,7 @@ export default function DepartmentDetailsPage() {
           <div className="flex border-b border-slate-100 bg-slate-50/60">
             {([
               { key: 'activity', label: 'Activity', icon: Activity, dot: null },
-              { key: 'leaves', label: 'Leaves', icon: Clock, dot: org.leaves.length > 0 ? org.leaves.length : null },
+              // Leave is retired in favour of PA unavailability notices, so its tab stays hidden.
               { key: 'holidays', label: 'Holidays', icon: CalendarDays, dot: null },
             ] as { key: SidebarTab; label: string; icon: LucideIcon; dot: number | null }[]).map((tab) => (
               <button
@@ -851,7 +737,7 @@ export default function DepartmentDetailsPage() {
               <Label htmlFor="memberPhoto">Photo</Label>
               <div className="flex items-center gap-3">
                 <EntityAvatar name={editFormData.name} fallbackText={editingMember?.email || editingMember?.empCode} imageUrl={editPhotoPreview} className="h-12 w-12 border border-slate-200" />
-                <Input id="memberPhoto" type="file" accept="image/*" onChange={(e) => handlePhotoChange(e, 'edit')} />
+                <Input id="memberPhoto" type="file" accept="image/*" onChange={handlePhotoChange} />
               </div>
             </div>
             {/* Faculty identity comes from Kerberos — there's nothing here for

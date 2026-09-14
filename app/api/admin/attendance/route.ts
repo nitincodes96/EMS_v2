@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { endOfDay, format, startOfDay } from "date-fns"
 import { Prisma } from "@prisma/client"
 import prisma from "@/lib/prisma"
+import { getScheduleSettings, lateAfterMinutes } from "@/lib/schedule-settings"
 import { getSessionUser } from "@/lib/api-auth"
 
 const DEFAULT_PAGE_SIZE = 15
@@ -80,15 +81,16 @@ export async function GET(request: Request) {
         flaggedOutsideGeofence: true,
         departmentId: true,
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
-        department: { select: { id: true, name: true, shiftStartTime: true, lateGraceMinutes: true } },
+        department: { select: { id: true, name: true } },
       },
     }),
     prisma.department.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ])
 
+  // One late threshold for everyone — shift start and grace are organization-wide
+  const lateAfter = lateAfterMinutes(await getScheduleSettings())
+
   const mapped = records.map((r) => {
-    const [h, m] = r.department.shiftStartTime.split(":").map(Number)
-    const lateAfter = h * 60 + m + r.department.lateGraceMinutes
     const minutesIn = r.checkInTime.getHours() * 60 + r.checkInTime.getMinutes()
     return {
       id: r.id,

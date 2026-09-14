@@ -377,3 +377,144 @@ export function leaveDecisionEmailHtml({
     `,
   })
 }
+
+/**
+ * Sent to every admin when a Project Assistant gives notice that they won't
+ * be in — for a whole day or a window of it. Nothing to approve; it's a
+ * heads-up so the admin knows and can re-plan.
+ */
+export function unavailabilityAdminEmailHtml({
+  adminName,
+  paName,
+  departmentName,
+  dateLabel,
+  windowLabel,
+  reason,
+  affectedBookings,
+  link,
+  brandName = "EMS Portal",
+}: {
+  adminName: string
+  paName: string
+  departmentName: string
+  dateLabel: string
+  windowLabel: string
+  reason?: string | null
+  affectedBookings: number
+  link?: string
+  brandName?: string
+}): string {
+  return emailLayout({
+    heading: "A PA won't be available",
+    brandName,
+    bodyHtml: `
+      <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#475569;">Hi <strong>${esc(adminName)}</strong>,</p>
+      <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#475569;">
+        <strong>${esc(paName)}</strong> has let us know they won't be available on the date below. Their slots in that window are now closed to new bookings.
+      </p>
+      ${detailTable([
+        { label: "Project Assistant", value: esc(paName) },
+        { label: "Department", value: esc(departmentName) },
+        { label: "Date", value: esc(dateLabel) },
+        { label: "Unavailable", value: esc(windowLabel) },
+        { label: "Reason", value: esc(reason?.trim() || "—") },
+        {
+          label: "Existing bookings",
+          value:
+            affectedBookings > 0
+              ? `<span style="color:#b45309;">${affectedBookings} booking${affectedBookings === 1 ? "" : "s"} affected — the faculty have been notified</span>`
+              : "None affected",
+        },
+      ])}
+      ${link ? ctaButton(link, "View notices") : ""}
+      <p style="margin:0;font-size:13px;color:#94a3b8;">This is a notice, not a request — no action is needed to apply it.</p>
+    `,
+  })
+}
+
+/**
+ * Sent to a faculty member who holds a booking inside the window a Project
+ * Assistant has just flagged as unavailable.
+ */
+export function unavailabilityFacultyEmailHtml({
+  facultyName,
+  paName,
+  dateLabel,
+  windowLabel,
+  slotLabel,
+  task,
+  workType,
+  reason,
+  bookingLink,
+  brandName = "EMS Portal",
+}: {
+  facultyName: string
+  paName: string
+  dateLabel: string
+  windowLabel: string
+  slotLabel: string
+  task: string
+  workType?: string | null
+  reason?: string | null
+  bookingLink?: string
+  brandName?: string
+}): string {
+  return emailLayout({
+    heading: "Your PA won't be available",
+    brandName,
+    bodyHtml: `
+      <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#475569;">Hi <strong>${esc(facultyName)}</strong>,</p>
+      <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#475569;">
+        <strong>${esc(paName)}</strong> has let us know they won't be in on <strong>${esc(dateLabel)}</strong> (${esc(windowLabel)}), which overlaps a booking you hold with them. You may want to reschedule it or book another PA.
+      </p>
+      ${detailTable([
+        { label: "Project Assistant", value: esc(paName) },
+        { label: "Booking", value: `${esc(dateLabel)}, ${esc(slotLabel)}` },
+        ...(workType ? [{ label: "Work type", value: esc(workType) }] : []),
+        ...(task.trim() ? [{ label: "Task", value: esc(task) }] : []),
+        { label: "PA unavailable", value: esc(windowLabel) },
+        { label: "Reason given", value: esc(reason?.trim() || "—") },
+      ])}
+      ${bookingLink ? ctaButton(bookingLink, "Open booking") : ""}
+      <p style="margin:0;font-size:13px;color:#94a3b8;">The booking itself hasn't been changed — it's still yours to reschedule or cancel.</p>
+    `,
+  })
+}
+
+/**
+ * Sent to a Project Assistant when an admin reverts an unavailability notice
+ * they gave, so they know they're expected in after all.
+ */
+export function unavailabilityRevertedEmailHtml({
+  paName,
+  dateLabel,
+  windowLabel,
+  remark,
+  link,
+  brandName = "EMS Portal",
+}: {
+  paName: string
+  dateLabel: string
+  windowLabel: string
+  remark?: string | null
+  link?: string
+  brandName?: string
+}): string {
+  return emailLayout({
+    heading: "Your unavailability was reverted",
+    brandName,
+    bodyHtml: `
+      <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#475569;">Hi <strong>${esc(paName)}</strong>,</p>
+      <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#475569;">
+        An admin has reverted the unavailability notice you gave for the time below. You're marked available again and faculty can book you for it.
+      </p>
+      ${detailTable([
+        { label: "Date", value: esc(dateLabel) },
+        { label: "Was unavailable", value: esc(windowLabel) },
+        ...(remark?.trim() ? [{ label: "Admin's note", value: esc(remark.trim()) }] : []),
+      ])}
+      ${link ? ctaButton(link, "View my notices") : ""}
+      <p style="margin:0;font-size:13px;color:#94a3b8;">If this is a mistake, talk to your admin — you can give a new notice from the portal.</p>
+    `,
+  })
+}

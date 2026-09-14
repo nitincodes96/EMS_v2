@@ -6,7 +6,7 @@ import { getSessionUser } from "@/lib/api-auth"
 const DEFAULT_PAGE_SIZE = 25
 const MAX_PAGE_SIZE = 100
 
-const CATEGORIES: SystemLogCategory[] = ["AUTH", "USER", "DEPARTMENT", "BOOKING", "LEAVE"]
+const CATEGORIES: SystemLogCategory[] = ["AUTH", "USER", "DEPARTMENT", "BOOKING", "LEAVE", "UNAVAILABILITY"]
 
 function isCategory(value: string | null): value is SystemLogCategory {
   return value != null && (CATEGORIES as string[]).includes(value)

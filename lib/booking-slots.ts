@@ -1,20 +1,20 @@
 // Shared time helpers for the PA booking calendar. Slot length is configured
-// per department (Department.slotDurationMinutes), so the grid is built from
-// that rather than assuming whole hours.
+// organization-wide (ScheduleSettings.slotDurationMinutes), so the grid is
+// built from that rather than assuming whole hours.
 //
 // Pure module (no Prisma) so it can be imported from client components.
 
 export type Slot = { startMin: number; endMin: number }
 
-/** Fallback slot length when a department hasn't been loaded yet. */
+/** Fallback slot length before the schedule settings have loaded. */
 export const DEFAULT_SLOT_MINUTES = 30
 
-/** Slot lengths an admin can pick from in the department settings. */
+/** Slot lengths an admin can pick from in the schedule settings. */
 export const SLOT_DURATION_OPTIONS = [15, 30, 60, 120] as const
 
 /**
  * A booking may only be cancelled or rescheduled up to this many minutes
- * before its start time, per department (Department.bookingChangeCutoffMinutes).
+ * before its start time (ScheduleSettings.bookingChangeCutoffMinutes).
  * Fallback for before that setting has loaded.
  */
 export const DEFAULT_BOOKING_CHANGE_CUTOFF_MINUTES = 60
@@ -29,8 +29,8 @@ export function formatDuration(totalMinutes: number): string {
 }
 
 /**
- * How far ahead a booking may be made, per department (Department.
- * bookingHorizonDays). A slot can be booked from today up to and including
+ * How far ahead a booking may be made (ScheduleSettings.bookingHorizonDays).
+ * A slot can be booked from today up to and including
  * this many days from today. Used as a fallback before that setting loads.
  */
 export const DEFAULT_BOOKING_HORIZON_DAYS = 7
@@ -109,7 +109,7 @@ export function slotRangeLabel(startMin: number, endMin: number): string {
 
 /**
  * Build the bookable slot grid between a window's start/end ("HH:mm"), stepping
- * by the department's configured slot length. An optional lunch break excludes
+ * by the configured slot length. An optional lunch break excludes
  * any slot that overlaps it, so that time isn't bookable.
  */
 export function buildSlots(

@@ -26,7 +26,7 @@ import {
   LogIn,
   LogOut,
   MapPin,
-  Plane,
+  CalendarOff,
   Timer,
 } from "lucide-react"
 import { useSession } from "next-auth/react"
@@ -34,6 +34,7 @@ import { useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { minutesToLabel, parseHHMM } from "@/lib/booking-slots"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
 
 // ---------------------------------------------------------------------------
@@ -58,19 +59,15 @@ type AttendanceRecord = {
   status: "PRESENT" | "LATE"
 }
 
-type UpcomingLeave = {
+/** An "I won't be in" notice the PA has given (replaces leave). */
+type Notice = {
   id: string
-  type: string
-  startDate: string
-  endDate: string
-  status: "PENDING" | "APPROVED" | "REJECTED"
-}
-
-type Leave = {
-  id: string
-  startDate: string
-  endDate: string
-  status: "PENDING" | "APPROVED" | "REJECTED"
+  date: string
+  startTime: string | null
+  endTime: string | null
+  reason: string | null
+  status: "ACTIVE" | "WITHDRAWN"
+  affectedBookings: number
 }
 
 type DepartmentSummary = {
@@ -95,7 +92,7 @@ type Booking = {
   department: { id: string; name: string } | null
 }
 
-type DayKind = "PRESENT" | "LATE" | "ABSENT" | "LEAVE" | "HOLIDAY"
+type DayKind = "PRESENT" | "LATE" | "ABSENT" | "UNAVAILABLE" | "HOLIDAY"
 
 /** The calendar shows either booked work or attendance history. */
 type CalendarView = "WORK" | "ATTENDANCE"
@@ -114,7 +111,7 @@ const DOT_STYLES: Record<DayKind, string> = {
   PRESENT: "bg-emerald-500",
   LATE: "bg-amber-500",
   ABSENT: "bg-red-500",
-  LEAVE: "bg-violet-500",
+  UNAVAILABLE: "bg-violet-500",
   HOLIDAY: "bg-indigo-500",
 }
 
@@ -130,7 +127,7 @@ const ATTENDANCE_LEGEND = [
   { label: "Present", cls: "bg-emerald-500" },
   { label: "Late", cls: "bg-amber-500" },
   { label: "Absent", cls: "bg-red-500" },
-  { label: "Leave", cls: "bg-violet-500" },
+  { label: "Unavailable", cls: "bg-violet-500" },
   { label: "Holiday", cls: "bg-indigo-500" },
 ] as const
 
@@ -162,12 +159,7 @@ export default function UserDashboard() {
   const [department, setDepartment] = useState<DepartmentSummary | null>(null)
   const [attendance, setAttendance] = useState<AttendanceSummary>(null)
   const [monthRecords, setMonthRecords] = useState<AttendanceRecord[]>([])
-  const [leaves, setLeaves] = useState<Leave[]>([])
-  const [upcomingLeaves, setUpcomingLeaves] = useState<UpcomingLeave[]>([])
-  const [leaveSummary, setLeaveSummary] = useState<{ usedLeaveDays: number; pendingLeaves: number }>({
-    usedLeaveDays: 0,
-    pendingLeaves: 0,
-  })
+  const [notices, setNotices] = useState<Notice[]>([])
   const [bookings, setBookings] = useState<Booking[]>([])
 
   const [actionLoading, setActionLoading] = useState(false)
@@ -178,10 +170,10 @@ export default function UserDashboard() {
   /** Everything that isn't month-scoped. */
   const loadCore = useCallback(async () => {
     try {
-      const [deptRes, attRes, leavesRes, bookingsRes] = await Promise.all([
+      const [deptRes, attRes, noticesRes, bookingsRes] = await Promise.all([
         fetch("/api/departments/me"),
         fetch("/api/attendance/today"),
-        fetch("/api/leaves"),
+        fetch("/api/unavailability"),
         fetch("/api/bookings"),
       ])
 
@@ -193,11 +185,9 @@ export default function UserDashboard() {
         const d = await attRes.json()
         setAttendance(d.attendance ?? null)
       }
-      if (leavesRes.ok) {
-        const d = await leavesRes.json()
-        setLeaves(d.leaves ?? [])
-        setUpcomingLeaves(d.upcomingLeaves ?? [])
-        setLeaveSummary(d.summary ?? { usedLeaveDays: 0, pendingLeaves: 0 })
+      if (noticesRes.ok) {
+        const d = await noticesRes.json()
+        setNotices(d.notices ?? [])
       }
       if (bookingsRes.ok) {
         const d = await bookingsRes.json()
@@ -250,16 +240,24 @@ export default function UserDashboard() {
     [department]
   )
 
-  const leaveLookup = useMemo(() => {
+  // Only whole-day notices colour a calendar day; part-day ones don't replace
+  // an attendance dot since the PA was still in for the rest of the day.
+  const unavailableLookup = useMemo(() => {
     const set = new Set<string>()
-    for (const l of leaves) {
-      if (l.status === "REJECTED") continue
-      for (const d of eachDayOfInterval({ start: new Date(l.startDate), end: new Date(l.endDate) })) {
-        set.add(dayKey(d))
-      }
+    for (const n of notices) {
+      if (n.status !== "ACTIVE" || n.startTime) continue
+      set.add(n.date.slice(0, 10))
     }
     return set
-  }, [leaves])
+  }, [notices])
+
+  const upcomingNotices = useMemo(() => {
+    const todayKey = dayKey(new Date())
+    return notices
+      .filter((n) => n.status === "ACTIVE" && n.date.slice(0, 10) >= todayKey)
+      .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime ?? "").localeCompare(b.startTime ?? ""))
+      .slice(0, 5)
+  }, [notices])
 
   const attendanceLookup = useMemo(
     () =>
@@ -281,7 +279,7 @@ export default function UserDashboard() {
       const key = dayKey(date)
       const holiday = holidayLookup[key]
       if (holiday) return { kind: "HOLIDAY", label: holiday.name }
-      if (leaveLookup.has(key)) return { kind: "LEAVE", label: "On leave" }
+      if (unavailableLookup.has(key)) return { kind: "UNAVAILABLE", label: "Marked unavailable" }
 
       const record = attendanceLookup[key]
       if (record) {
@@ -298,7 +296,7 @@ export default function UserDashboard() {
 
       return null
     },
-    [holidayLookup, leaveLookup, attendanceLookup, workingDays]
+    [holidayLookup, unavailableLookup, attendanceLookup, workingDays]
   )
 
   const bookingsByDay = useMemo(() => {
@@ -627,24 +625,23 @@ export default function UserDashboard() {
               </div>
             </Link>
 
-            <div className="flex flex-1 items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <Link
+              href="/project-assistant/unavailability"
+              className="flex flex-1 items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md"
+            >
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600 ring-1 ring-violet-100">
-                <Plane className="h-6 w-6" />
+                <CalendarOff className="h-6 w-6" />
               </div>
               <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <p className="text-2xl font-bold tracking-tight text-slate-900">
-                    {leaveSummary.usedLeaveDays} <span className="text-sm font-medium text-slate-500">days</span>
-                  </p>
-                  {leaveSummary.pendingLeaves > 0 && (
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-600">
-                      {leaveSummary.pendingLeaves} pending
-                    </span>
-                  )}
-                </div>
-                <p className="text-sm font-medium text-slate-500">Leave taken this year</p>
+                <p className="text-2xl font-bold tracking-tight text-slate-900">
+                  {upcomingNotices.length}{" "}
+                  <span className="text-sm font-medium text-slate-500">
+                    {upcomingNotices.length === 1 ? "day" : "days"}
+                  </span>
+                </p>
+                <p className="text-sm font-medium text-slate-500">Upcoming unavailability</p>
               </div>
-            </div>
+            </Link>
           </div>
         </div>
 
@@ -837,52 +834,57 @@ export default function UserDashboard() {
             )}
           </div>
 
-          {/* Upcoming leaves */}
+          {/* Upcoming unavailability */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-3">
-              <h2 className="text-base font-bold text-slate-900">Upcoming Leaves</h2>
-              <Plane className="h-4 w-4 text-indigo-600" />
+              <h2 className="text-base font-bold text-slate-900">Upcoming Unavailability</h2>
+              <CalendarOff className="h-4 w-4 text-indigo-600" />
             </div>
 
             <div className="space-y-3">
-              {upcomingLeaves.length === 0 ? (
-                <p className="py-4 text-center text-sm text-slate-500">No upcoming leaves.</p>
+              {upcomingNotices.length === 0 ? (
+                <p className="py-4 text-center text-sm text-slate-500">You&apos;re marked available for every upcoming day.</p>
               ) : (
-                upcomingLeaves.map((leave) => (
-                  <div
-                    key={leave.id}
-                    className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3 transition-colors hover:bg-slate-50"
-                  >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-700">
-                      <CalendarDays className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-slate-900">{leave.type}</p>
-                      <p className="text-xs font-medium text-slate-500">
-                        {format(new Date(leave.startDate), "MMM d")} – {format(new Date(leave.endDate), "MMM d")}
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
-                        leave.status === "APPROVED"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-amber-100 text-amber-700"
-                      )}
+                upcomingNotices.map((n) => {
+                  const key = n.date.slice(0, 10)
+                  const window =
+                    n.startTime && n.endTime
+                      ? `${minutesToLabel(parseHHMM(n.startTime))} – ${minutesToLabel(parseHHMM(n.endTime))}`
+                      : "All day"
+                  return (
+                    <div
+                      key={n.id}
+                      className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3 transition-colors hover:bg-slate-50"
                     >
-                      {leave.status}
-                    </span>
-                  </div>
-                ))
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-700">
+                        <CalendarDays className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold text-slate-900">
+                          {format(new Date(`${key}T00:00:00`), "EEE, MMM d")}
+                        </p>
+                        <p className="truncate text-xs font-medium text-slate-500">
+                          {window}
+                          {n.reason ? ` · ${n.reason}` : ""}
+                        </p>
+                      </div>
+                      {n.affectedBookings > 0 && (
+                        <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                          {n.affectedBookings} booked
+                        </span>
+                      )}
+                    </div>
+                  )
+                })
               )}
             </div>
 
             <Button
               variant="ghost"
-              render={<Link href="/project-assistant/leave" />}
+              render={<Link href="/project-assistant/unavailability" />}
               className="mt-4 w-full cursor-pointer text-sm font-semibold text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700"
             >
-              Request time off
+              Mark a day unavailable
             </Button>
           </div>
         </div>

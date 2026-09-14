@@ -23,18 +23,19 @@ import {
   Circle,
   Eye,
   PartyPopper,
-  Plane,
+  CalendarOff,
   UserX,
   XCircle,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { minutesToLabel, parseHHMM } from "@/lib/booking-slots"
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type EntryType = "TASK" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED" | "LEAVE" | "HOLIDAY"
+type EntryType = "TASK" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED" | "UNAVAILABLE" | "HOLIDAY"
 
 type DayEntry = {
   id: string
@@ -55,12 +56,14 @@ type Booking = {
   faculty: { name: string | null; email: string }
 }
 
-type Leave = {
+/** An "I won't be in" notice the PA has given (replaces leave). */
+type Notice = {
   id: string
+  date: string
+  startTime: string | null
+  endTime: string | null
   reason: string | null
-  startDate: string
-  endDate: string
-  status: "PENDING" | "APPROVED" | "REJECTED"
+  status: "ACTIVE" | "WITHDRAWN"
 }
 
 type Holiday = { id: string; name: string; date: string; type: string }
@@ -71,13 +74,13 @@ const TYPE_CHIP: Record<EntryType, string> = {
   INCOMPLETE: "bg-orange-50 text-orange-700",
   ABSENT: "bg-red-50 text-red-700",
   CANCELLED: "bg-slate-100 text-slate-500",
-  LEAVE: "bg-violet-50 text-violet-700",
+  UNAVAILABLE: "bg-violet-50 text-violet-700",
   HOLIDAY: "bg-amber-50 text-amber-700",
 }
 
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
 
-/** Every entry type except leave/holiday is backed by a real booking. */
+/** Every entry type except unavailability/holiday is backed by a real booking. */
 const BOOKING_ENTRY_TYPES: ReadonlySet<EntryType> = new Set([
   "TASK",
   "COMPLETED",
@@ -93,7 +96,7 @@ export default function CalendarPage() {
   const [selectedDay, setSelectedDay] = useState<Date>(new Date())
 
   const [bookings, setBookings] = useState<Booking[]>([])
-  const [leaves, setLeaves] = useState<Leave[]>([])
+  const [notices, setNotices] = useState<Notice[]>([])
   const [holidays, setHolidays] = useState<Holiday[]>([])
   const [workingDays, setWorkingDays] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -101,9 +104,9 @@ export default function CalendarPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [bookingsRes, leavesRes, deptRes] = await Promise.all([
+      const [bookingsRes, noticesRes, deptRes] = await Promise.all([
         fetch("/api/bookings"),
-        fetch("/api/leaves"),
+        fetch("/api/unavailability"),
         fetch("/api/departments/me"),
       ])
 
@@ -111,9 +114,9 @@ export default function CalendarPage() {
         const d = await bookingsRes.json()
         setBookings(d.bookings ?? [])
       }
-      if (leavesRes.ok) {
-        const d = await leavesRes.json()
-        setLeaves(d.leaves ?? [])
+      if (noticesRes.ok) {
+        const d = await noticesRes.json()
+        setNotices(d.notices ?? [])
       }
       if (deptRes.ok) {
         const d = await deptRes.json()
@@ -142,7 +145,7 @@ export default function CalendarPage() {
     return { days: eachDayOfInterval({ start, end }), leadingBlanks: getDay(start) }
   }, [month])
 
-  // Bookings, leave days and holidays collapsed into per-day entries
+  // Bookings, unavailability notices and holidays collapsed into per-day entries
   const entriesByDay = useMemo(() => {
     const map: Record<string, DayEntry[]> = {}
     const push = (key: string, entry: DayEntry) => {
@@ -159,18 +162,18 @@ export default function CalendarPage() {
       })
     }
 
-    for (const l of leaves) {
-      if (l.status === "REJECTED") continue
-      const days = eachDayOfInterval({ start: new Date(l.startDate), end: new Date(l.endDate) })
-      for (const d of days) {
-        push(dayKey(d), {
-          id: `leave-${l.id}-${dayKey(d)}`,
-          time: "All day",
-          title: l.reason || "Leave",
-          subtitle: l.status === "PENDING" ? "Awaiting approval" : "Approved leave",
-          type: "LEAVE",
-        })
-      }
+    for (const n of notices) {
+      if (n.status !== "ACTIVE") continue
+      const wholeDay = !n.startTime || !n.endTime
+      push(n.date.slice(0, 10), {
+        id: `away-${n.id}`,
+        time: wholeDay ? "All day" : minutesToLabel(parseHHMM(n.startTime!)),
+        title: n.reason || "Marked unavailable",
+        subtitle: wholeDay
+          ? "Unavailable all day"
+          : `Unavailable ${minutesToLabel(parseHHMM(n.startTime!))}–${minutesToLabel(parseHHMM(n.endTime!))}`,
+        type: "UNAVAILABLE",
+      })
     }
 
     for (const b of bookings) {
@@ -205,7 +208,7 @@ export default function CalendarPage() {
       })
     }
     return map
-  }, [bookings, leaves, holidays])
+  }, [bookings, notices, holidays])
 
   const selectedEntries = entriesByDay[dayKey(selectedDay)] ?? []
 
@@ -337,7 +340,7 @@ export default function CalendarPage() {
               <div className="mt-2.5 space-y-2">
                 <Legend dot="bg-indigo-500" label="Assigned tasks" />
                 <Legend dot="bg-emerald-500" label="Completed" />
-                <Legend dot="bg-violet-500" label="Leave" />
+                <Legend dot="bg-violet-500" label="Unavailable" />
                 <Legend dot="bg-amber-500" label="Holiday" />
               </div>
             </div>
@@ -387,7 +390,7 @@ function EntryIcon({ type }: { type: EntryType }) {
   if (type === "INCOMPLETE") return <XCircle className={cn(cls, "text-orange-500")} />
   if (type === "ABSENT") return <UserX className={cn(cls, "text-red-500")} />
   if (type === "CANCELLED") return <Ban className={cn(cls, "text-slate-400")} />
-  if (type === "LEAVE") return <Plane className={cn(cls, "text-violet-500")} />
+  if (type === "UNAVAILABLE") return <CalendarOff className={cn(cls, "text-violet-500")} />
   if (type === "HOLIDAY") return <PartyPopper className={cn(cls, "text-amber-500")} />
   return <Circle className={cn(cls, "text-slate-300")} />
 }

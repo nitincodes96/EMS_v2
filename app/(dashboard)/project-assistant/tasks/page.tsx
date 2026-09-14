@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { format, isToday, isTomorrow } from "date-fns"
 import {
   Ban,
+  CheckCheck,
   CheckCircle2,
   CircleDot,
   ClipboardCheck,
@@ -52,6 +53,7 @@ type Booking = {
   task: string
   status: BookingStatus
   rating: number | null
+  paAcknowledgedAt: string | null
   paStatus: PaWorkStatus | null
   paRemark: string | null
   paMarkedAt: string | null
@@ -444,6 +446,19 @@ function PaReportBadge({ status }: { status: PaWorkStatus | null }) {
   )
 }
 
+/**
+ * Read receipt shown to the PA once they've tapped "Got it". Acknowledging is
+ * optional, so nothing is shown (and nothing nags) before that.
+ */
+function AcknowledgedBadge({ at }: { at: string | null }) {
+  if (!at) return null
+  return (
+    <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+      <CheckCheck className="h-3 w-3" /> Seen {format(new Date(at), "MMM d, h:mm a")}
+    </span>
+  )
+}
+
 function TaskRow({
   booking,
   status,
@@ -455,11 +470,34 @@ function TaskRow({
 }) {
   const [reportOpen, setReportOpen] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [acknowledging, setAcknowledging] = useState(false)
   const config = STATUS_CONFIG[status]
   const facultyName = booking.faculty.name || booking.faculty.email
   // Reporting only makes sense once the slot has actually started — an
   // upcoming booking has no work to mark done or not done yet.
   const canReport = status === "IN_PROGRESS"
+  // "Got it" is an optional read receipt for the faculty — nothing to accept,
+  // the booking is already confirmed. Offered on any open booking not yet seen.
+  const canAcknowledge = booking.status === "BOOKED" && !booking.paAcknowledgedAt
+
+  async function acknowledge() {
+    setAcknowledging(true)
+    try {
+      const res = await fetch(`/api/bookings/${booking.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ACKNOWLEDGE" }),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(json?.error || "Failed to acknowledge")
+      toast.success(`${facultyName} will see you've read this booking.`)
+      await onReported()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to acknowledge")
+    } finally {
+      setAcknowledging(false)
+    }
+  }
 
   return (
     <>
@@ -530,6 +568,7 @@ function TaskRow({
         {/* PA report */}
         <td className="whitespace-nowrap px-4 py-3">
           <PaReportBadge status={booking.paStatus} />
+          {booking.status === "BOOKED" && <AcknowledgedBadge at={booking.paAcknowledgedAt} />}
         </td>
 
         {/* Action */}
@@ -539,6 +578,26 @@ function TaskRow({
               <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" />
               {booking.paStatus ? "Update" : "Mark"}
             </Button>
+          ) : canAcknowledge ? (
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setDetailsOpen(true)}
+                className="cursor-pointer text-xs font-medium text-indigo-600 hover:underline"
+              >
+                View
+              </button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={acknowledge}
+                disabled={acknowledging}
+                title="Optional — lets the faculty know you've read this booking"
+                className="h-7 cursor-pointer border-slate-200 text-xs text-slate-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+              >
+                <CheckCheck className="mr-1 h-3 w-3" />
+                {acknowledging ? "…" : "Got it"}
+              </Button>
+            </div>
           ) : (
             <button
               onClick={() => setDetailsOpen(true)}
@@ -570,6 +629,10 @@ function TaskRow({
             setDetailsOpen(false)
             setReportOpen(true)
           } : undefined}
+          onAcknowledge={canAcknowledge ? async () => {
+            setDetailsOpen(false)
+            await acknowledge()
+          } : undefined}
         />
       )}
     </>
@@ -585,11 +648,13 @@ function TaskDetailsDialog({
   status,
   onClose,
   onReport,
+  onAcknowledge,
 }: {
   booking: Booking
   status: TaskStatus
   onClose: () => void
   onReport?: () => void
+  onAcknowledge?: () => void | Promise<void>
 }) {
   // The booking can still be cancelled/rescheduled by faculty any time it's
   // open — even before it starts — separately from whether reporting is
@@ -622,6 +687,7 @@ function TaskDetailsDialog({
             </span>
             <PaReportBadge status={booking.paStatus} />
           </div>
+          {isBookingOpen && <AcknowledgedBadge at={booking.paAcknowledgedAt} />}
 
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Description</p>
@@ -672,6 +738,16 @@ function TaskDetailsDialog({
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>
             Close
           </Button>
+          {onAcknowledge && (
+            <Button
+              variant="outline"
+              className="cursor-pointer border-slate-200 text-slate-700 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+              onClick={onAcknowledge}
+              title="Optional — lets the faculty know you've read this booking"
+            >
+              <CheckCheck className="mr-1.5 h-4 w-4" /> Got it
+            </Button>
+          )}
           {onReport && (
             <Button className="cursor-pointer bg-indigo-600 text-white hover:bg-indigo-700" onClick={onReport}>
               <ClipboardCheck className="mr-1.5 h-4 w-4" /> Report work

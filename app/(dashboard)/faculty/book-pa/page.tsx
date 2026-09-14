@@ -25,7 +25,7 @@ import { minutesToLabel } from "@/lib/booking-slots"
 import { cn } from "@/lib/utils"
 
 type Availability = {
-  status: "free" | "booked" | "on-leave"
+  status: "free" | "booked" | "on-leave" | "unavailable"
   dayBookingCount: number
 }
 
@@ -63,6 +63,7 @@ const AVAILABILITY_BADGE: Record<Availability["status"], { label: string; cls: s
   free: { label: "Free", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" },
   booked: { label: "Booked", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-500" },
   "on-leave": { label: "On leave", cls: "bg-red-50 text-red-700", dot: "bg-red-500" },
+  unavailable: { label: "Unavailable", cls: "bg-rose-50 text-rose-700", dot: "bg-rose-500" },
 }
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50]

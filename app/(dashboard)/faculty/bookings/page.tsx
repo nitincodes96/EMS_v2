@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { SearchInput } from "@/components/shared/search-input"
 import { TablePagination } from "@/components/shared/table-pagination"
 import { cn } from "@/lib/utils"
+import { PaSeenBadge } from "@/components/shared/pa-seen-badge"
 
 type Booking = {
   id: string
@@ -19,6 +20,7 @@ type Booking = {
   task: string
   status: "BOOKED" | "COMPLETED" | "INCOMPLETE" | "ABSENT" | "CANCELLED"
   paStatus: "DONE" | "NOT_DONE" | null
+  paAcknowledgedAt: string | null
   createdAt: string
   pa: { id: string; name: string | null; email: string }
 }
@@ -185,7 +187,7 @@ export default function FacultyBookingsPage() {
                 <th className="px-4 py-3">Work type</th>
                 <th className="px-4 py-3">Task</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">PA report</th>
+                <th className="px-4 py-3">PA status</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
@@ -227,7 +229,11 @@ export default function FacultyBookingsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <PaStatusBadge paStatus={b.paStatus} />
+                      {b.status === "BOOKED" && b.paAcknowledgedAt ? (
+                        <PaSeenBadge acknowledgedAt={b.paAcknowledgedAt} status={b.status} />
+                      ) : (
+                        <PaStatusBadge paStatus={b.paStatus} />
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end">

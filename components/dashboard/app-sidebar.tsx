@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   Building2,
+  CalendarOff,
   CalendarPlus,
   ClipboardList,
   LayoutDashboard,
@@ -11,7 +12,6 @@ import {
   ScrollText,
   Users,
   Watch,
-  Calendar,
   CalendarPlus2
 } from "lucide-react";
 import Link from "next/link";
@@ -39,7 +39,8 @@ const NAV_ITEMS = {
     { title: "Users", url: "/admin/users", icon: Users },
     { title: "Attendance", url: "/admin/attendance", icon: Watch },
     { title: "Bookings", url: "/admin/bookings", icon: ClipboardList },
-    { title: "Leave", url: "/admin/leave", icon: Calendar },
+    // Leave is retired — PAs give unavailability notices instead (no approval).
+    { title: "PA Unavailability", url: "/admin/unavailability", icon: CalendarOff },
     { title: "System Logs", url: "/admin/logs", icon: ScrollText },
     { title: "Settings", url: "/admin/settings", icon: Settings },
   ],
@@ -54,7 +55,6 @@ const NAV_ITEMS = {
 
   MODERATOR: [
     { title: "Dashboard", url: "/moderator/dashboard", icon: LayoutDashboard },
-    { title: "Leaves", url: "/moderator/leave", icon: Calendar },
     { title: "Team", url: "/moderator/team", icon: Users },
     { title: "Settings", url: "/moderator/settings", icon: Settings },
   ],
@@ -64,7 +64,7 @@ const NAV_ITEMS = {
     { title: "My Tasks", url: "/project-assistant/tasks", icon: ClipboardList },
     { title: "Calendar", url: "/project-assistant/calendar", icon: CalendarPlus2 },
     { title: "Attendance", url: "/project-assistant/attendance", icon: Watch },
-    { title: "Leave", url: "/project-assistant/leave", icon: Calendar },
+    { title: "Unavailability", url: "/project-assistant/unavailability", icon: CalendarOff },
     // { title: "Team", url: "/project-assistant/team", icon: Users },
     { title: "Settings", url: "/project-assistant/settings", icon: Settings },
   ],

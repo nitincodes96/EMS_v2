@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { eachDayOfInterval, endOfDay, format, startOfDay, subDays } from "date-fns"
 import prisma from "@/lib/prisma"
+import { getScheduleSettings, lateAfterMinutes } from "@/lib/schedule-settings"
 import { getSessionUser } from "@/lib/api-auth"
 
 // GET: figures for the Admin dashboard.
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
       select: { id: true, role: true, isActive: true, departmentId: true },
     }),
     prisma.department.findMany({
-      select: { id: true, name: true, shiftStartTime: true, lateGraceMinutes: true },
+      select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     prisma.attendance.count({ where: { checkInTime: { gte: todayStart, lte: windowEnd }, ...scope } }),
@@ -70,13 +71,9 @@ export async function GET(request: Request) {
     }),
   ])
 
-  // Late threshold per department, so each punch is judged against its own shift
-  const lateAfter = new Map(
-    departments.map((d) => {
-      const [h, m] = d.shiftStartTime.split(":").map(Number)
-      return [d.id, h * 60 + m + d.lateGraceMinutes]
-    })
-  )
+  // One late threshold for everyone — shift start and grace are organization-wide
+  const lateAfterAll = lateAfterMinutes(await getScheduleSettings())
+  const lateAfter = new Map(departments.map((d) => [d.id, lateAfterAll]))
 
   const activeStaff = users.filter((u) => u.isActive && u.departmentId)
   const paCount = activeStaff.filter((u) => u.role === "PROJECT_ASSISTANT").length

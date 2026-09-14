@@ -3,7 +3,14 @@ import { Prisma } from "@prisma/client"
 import prisma from "@/lib/prisma"
 import { getSessionUser, hasRole } from "@/lib/api-auth"
 import { isValidWorkType } from "@/lib/work-types"
-import { checkBookingHorizon, checkSlotAvailability, countActiveFacultyBookings, toBookingDate } from "@/lib/booking-rules"
+import {
+  checkBookingHorizon,
+  checkSlotAvailability,
+  checkSlotCount,
+  countActiveFacultyBookings,
+  toBookingDate,
+} from "@/lib/booking-rules"
+import { getScheduleSettings } from "@/lib/schedule-settings"
 import { notifyPaOfBooking } from "@/lib/booking-notify"
 import { logEvent } from "@/lib/system-log"
 
@@ -157,14 +164,17 @@ export async function POST(request: Request) {
     // Description is optional
     const taskText = task?.trim() || ""
 
-    if (workType != null && !isValidWorkType(workType)) {
+    if (workType != null && !(await isValidWorkType(workType))) {
       return NextResponse.json({ error: "Invalid work type" }, { status: 400 })
     }
 
-    const pa = await prisma.user.findUnique({
-      where: { id: paId },
-      include: { department: { select: { facultyBookingLimit: true, bookingHorizonDays: true } } },
-    })
+    const [pa, schedule] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: paId },
+        include: { department: { select: { id: true } } },
+      }),
+      getScheduleSettings(),
+    ])
     if (!pa || pa.role !== "PROJECT_ASSISTANT") {
       return NextResponse.json({ error: "Selected user is not a Project Assistant" }, { status: 400 })
     }
@@ -183,9 +193,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "PA has no department" }, { status: 400 })
     }
 
-    // Department-level cap on how many bookings a faculty can have open at once
-    // (FR: PA booking limit). 0 = unlimited.
-    const limit = pa.department.facultyBookingLimit
+    if (!schedule.bookingEnabled) {
+      return NextResponse.json({ error: "Booking is currently disabled" }, { status: 403 })
+    }
+
+    // Organization-wide cap on how many bookings a faculty can have open at
+    // once (FR: PA booking limit). 0 = unlimited.
+    const limit = schedule.facultyBookingLimit
     if (limit > 0) {
       const activeCount = await countActiveFacultyBookings(sessionUser.id, pa.departmentId)
       if (activeCount >= limit) {
@@ -205,9 +219,14 @@ export async function POST(request: Request) {
     const start = new Date(`${date}T${startTime}`)
     const end = new Date(`${date}T${endTime}`)
 
-    const horizonError = checkBookingHorizon(bookingDate, pa.department.bookingHorizonDays)
+    const horizonError = checkBookingHorizon(bookingDate, schedule.bookingHorizonDays)
     if (horizonError) {
       return NextResponse.json({ error: horizonError.error }, { status: horizonError.status })
+    }
+
+    const slotCountError = checkSlotCount(start, end, schedule.slotDurationMinutes, schedule.maxSlotsPerBooking)
+    if (slotCountError) {
+      return NextResponse.json({ error: slotCountError.error }, { status: slotCountError.status })
     }
 
     const unavailable = await checkSlotAvailability({ paId, bookingDate, start, end })

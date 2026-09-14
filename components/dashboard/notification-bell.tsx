@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { formatDistanceToNow } from "date-fns"
-import { Bell, CalendarClock, ClipboardList, Info } from "lucide-react"
+import { Bell, CalendarClock, CalendarOff, ClipboardList, Info } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
 type Notification = {
   id: string
-  type: "GENERAL" | "BOOKING" | "LEAVE" | "SESSION"
+  type: "GENERAL" | "BOOKING" | "LEAVE" | "UNAVAILABILITY" | "SESSION"
   title: string
   message: string
   isRead: boolean
@@ -19,6 +19,7 @@ const ICONS: Record<Notification["type"], typeof Info> = {
   GENERAL: Info,
   BOOKING: ClipboardList,
   LEAVE: CalendarClock,
+  UNAVAILABILITY: CalendarOff,
   SESSION: Info,
 }
 

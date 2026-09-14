@@ -31,7 +31,7 @@ import { toast } from "react-hot-toast"
 
 import { Button } from "@/components/ui/button"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
-import { WORK_TYPES } from "@/lib/work-types"
+import { useWorkTypes } from "@/hooks/use-work-types"
 import {
   buildSlots,
   bookingWindowKeys,
@@ -72,11 +72,16 @@ type MonthBooking = {
 
 type MonthHoliday = { id: string; date: string; name: string; type: string }
 
+/** A part-day window the PA has said they won't be in for. */
+type PartialUnavailability = { id: string; date: string; start: string; end: string; reason: string | null }
+
 type MonthResponse = {
   pa: PADetail
   workingDays: string[]
   bookingHorizonDays: number
   leaveDates: string[]
+  unavailableDates: string[]
+  partialUnavailability: PartialUnavailability[]
   bookings: MonthBooking[]
   holidays: MonthHoliday[]
 }
@@ -85,9 +90,11 @@ type SlotsResponse = {
   bookingLimit: { limit: number; active: number; reached: boolean }
   bookingWindow: { start: string; end: string; enabled: boolean }
   slotDurationMinutes: number
+  maxSlotsPerBooking: number
   lunch: { start: string | null; end: string | null }
   dayUnavailable: boolean
   dayUnavailableReason: string | null
+  unavailable: { id: string; start: string; end: string; reason: string | null }[]
   booked: { id: string; start: string; end: string; status: string }[]
 }
 
@@ -98,6 +105,7 @@ const CHIP = {
   COMPLETED: "bg-emerald-50 text-emerald-700",
   INCOMPLETE: "bg-amber-50 text-amber-700",
   LEAVE: "bg-red-50 text-red-700",
+  UNAVAILABLE: "bg-rose-50 text-rose-700",
   HOLIDAY: "bg-amber-50 text-amber-700",
   OFF: "bg-slate-100 text-slate-500",
 } as const
@@ -157,6 +165,8 @@ export default function BookPACalendarPage() {
   const [pa, setPa] = useState<PADetail | null>(null)
   const [month, setMonth] = useState(() => new Date())
   const [leaveDates, setLeaveDates] = useState<Set<string>>(new Set())
+  const [unavailableDates, setUnavailableDates] = useState<Set<string>>(new Set())
+  const [partialUnavailability, setPartialUnavailability] = useState<PartialUnavailability[]>([])
   const [workingDays, setWorkingDays] = useState<Set<string>>(new Set())
   const [bookingHorizonDays, setBookingHorizonDays] = useState(DEFAULT_BOOKING_HORIZON_DAYS)
   const [bookings, setBookings] = useState<MonthBooking[]>([])
@@ -192,6 +202,8 @@ export default function BookPACalendarPage() {
       }
       setPa(json.pa)
       setLeaveDates(new Set(json.leaveDates ?? []))
+      setUnavailableDates(new Set(json.unavailableDates ?? []))
+      setPartialUnavailability(json.partialUnavailability ?? [])
       setWorkingDays(new Set(json.workingDays ?? []))
       setBookingHorizonDays(json.bookingHorizonDays ?? DEFAULT_BOOKING_HORIZON_DAYS)
       setBookings(json.bookings ?? [])
@@ -227,10 +239,18 @@ export default function BookPACalendarPage() {
     return map
   }, [holidays])
 
+  const partialByDate = useMemo(() => {
+    const map: Record<string, PartialUnavailability[]> = {}
+    for (const u of partialUnavailability) (map[u.date] ??= []).push(u)
+    return map
+  }, [partialUnavailability])
+
   const selectedKey = dayKey(selectedDay)
   const selectedBookings = bookingsByDate[selectedKey] ?? []
   const selectedHoliday = holidayByDate[selectedKey] ?? null
+  // Leave and a whole-day notice both block the day the same way
   const selectedOnLeave = leaveDates.has(selectedKey)
+  const selectedUnavailable = unavailableDates.has(selectedKey)
   const selectedNonWorking = workingDays.size > 0 && !workingDays.has(format(selectedDay, "EEE"))
 
   if (notFound) {
@@ -344,6 +364,8 @@ export default function BookPACalendarPage() {
               const past = isBefore(day, today)
               const holiday = holidayByDate[key]
               const onLeave = leaveDates.has(key)
+              const awayAllDay = unavailableDates.has(key)
+              const awayPartly = partialByDate[key] ?? []
               const beyondHorizon = key > horizonKey
               const nonWorkingDay = workingDays.size > 0 && !workingDays.has(format(day, "EEE"))
               // Outside the booking window, a non-working day, a holiday, or the past → not bookable
@@ -355,6 +377,14 @@ export default function BookPACalendarPage() {
               if (holiday) chips.push({ key: "hol", label: holiday.name, cls: CHIP.HOLIDAY })
               else if (nonWorkingDay) chips.push({ key: "off", label: "Non-working day", cls: CHIP.OFF })
               if (onLeave) chips.push({ key: "leave", label: "On leave", cls: CHIP.LEAVE })
+              if (awayAllDay) chips.push({ key: "away", label: "PA unavailable", cls: CHIP.UNAVAILABLE })
+              for (const u of awayPartly) {
+                chips.push({
+                  key: u.id,
+                  label: `Unavailable ${minutesToLabel(parseHHMM(u.start))}–${minutesToLabel(parseHHMM(u.end))}`,
+                  cls: CHIP.UNAVAILABLE,
+                })
+              }
               for (const b of dayBookings) {
                 chips.push({
                   key: b.id,
@@ -412,7 +442,7 @@ export default function BookPACalendarPage() {
               <span className="h-2.5 w-2.5 rounded-sm bg-slate-200" /> Non-working
             </span>
             <span className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-sm bg-red-100" /> On leave
+              <span className="h-2.5 w-2.5 rounded-sm bg-rose-100" /> PA unavailable
             </span>
             <span className="flex items-center gap-1">
               <span className="h-2.5 w-2.5 rounded-sm bg-indigo-100" /> Booked
@@ -426,7 +456,7 @@ export default function BookPACalendarPage() {
           day={selectedDay}
           dayBookings={selectedBookings}
           holiday={selectedHoliday}
-          onLeave={selectedOnLeave}
+          onLeave={selectedOnLeave || selectedUnavailable}
           nonWorkingDay={selectedNonWorking}
           beyondHorizon={selectedKey > horizonKey}
           bookingHorizonDays={bookingHorizonDays}
@@ -469,6 +499,7 @@ function DayPanel({
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<number[]>([])
   const [workType, setWorkType] = useState("")
+  const { workTypes, loading: workTypesLoading } = useWorkTypes()
   const [description, setDescription] = useState("")
   const [submitting, setSubmitting] = useState(false)
   // Held between the success toast and the redirect below, so the button can't
@@ -516,6 +547,13 @@ function DayPanel({
     () => (data?.booked ?? []).map((b) => ({ startMin: parseHHMM(b.start), endMin: parseHHMM(b.end) })),
     [data]
   )
+  // Part-day windows the PA has flagged as unavailable
+  const awayRanges = useMemo(
+    () => (data?.unavailable ?? []).map((u) => ({ startMin: parseHHMM(u.start), endMin: parseHHMM(u.end) })),
+    [data]
+  )
+  // Cap on consecutive slots in one booking (0 = unlimited)
+  const maxSlots = data?.maxSlotsPerBooking ?? 0
 
   const isTodayDate = date === format(new Date(), "yyyy-MM-dd")
   const nowMin = useMemo(() => {
@@ -532,12 +570,13 @@ function DayPanel({
     (data?.dayUnavailable ?? onLeave) || isPast || beyondHorizon || nonWorkingDay || Boolean(holiday)
 
   const slotState = useCallback(
-    (slot: Slot): "available" | "booked" | "past" => {
+    (slot: Slot): "available" | "booked" | "unavailable" | "past" => {
+      if (awayRanges.some((a) => a.startMin < slot.endMin && a.endMin > slot.startMin)) return "unavailable"
       if (bookedRanges.some((b) => b.startMin < slot.endMin && b.endMin > slot.startMin)) return "booked"
       if (isTodayDate && slot.startMin <= nowMin) return "past"
       return "available"
     },
-    [bookedRanges, isTodayDate, nowMin]
+    [awayRanges, bookedRanges, isTodayDate, nowMin]
   )
 
   const isSelectable = useCallback(
@@ -570,8 +609,13 @@ function DayPanel({
     }
     const lo = Math.min(min, i)
     const hi = Math.max(max, i)
-    if (allSelectable(lo, hi)) setSelected(range(lo, hi))
-    else setSelected([i])
+    if (!allSelectable(lo, hi)) return setSelected([i])
+    // Extending past the per-booking cap starts a fresh selection instead
+    if (maxSlots > 0 && hi - lo + 1 > maxSlots) {
+      toast.error(`A booking can cover at most ${maxSlots} slot${maxSlots === 1 ? "" : "s"}.`)
+      return setSelected([i])
+    }
+    setSelected(range(lo, hi))
   }
 
   const hasSelection = selected.length > 0
@@ -649,7 +693,7 @@ function DayPanel({
           )}
           {onLeave && (
             <div className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-              PA is on approved leave this day.
+              {data?.dayUnavailableReason ?? "PA has marked themselves unavailable for this day."}
             </div>
           )}
           {isPast && !onLeave && (
@@ -763,7 +807,10 @@ function DayPanel({
         ) : (
           <div className="mt-2.5">
             <p className="mb-2 text-[11px] text-slate-400">
-              Each slot is {formatDuration(slotMinutes)} — pick consecutive slots for a longer booking.
+              Each slot is {formatDuration(slotMinutes)} —{" "}
+              {maxSlots > 0
+                ? `pick up to ${maxSlots} consecutive slot${maxSlots === 1 ? "" : "s"} (${formatDuration(maxSlots * slotMinutes)} max) per booking.`
+                : "pick consecutive slots for a longer booking."}
             </p>
             <div className="grid grid-cols-2 gap-2">
               {slots.map((slot, i) => {
@@ -776,14 +823,24 @@ function DayPanel({
                     type="button"
                     disabled={disabled}
                     onClick={() => toggleSlot(i)}
-                    title={state === "booked" ? "Already booked" : state === "past" ? "Time has passed" : undefined}
+                    title={
+                      state === "booked"
+                        ? "Already booked"
+                        : state === "unavailable"
+                          ? "PA has marked this time as unavailable"
+                          : state === "past"
+                            ? "Time has passed"
+                            : undefined
+                    }
                     className={cn(
                       "whitespace-nowrap rounded-lg border px-2 py-2 text-[11px] font-medium transition-colors",
                       isSel
                         ? "border-indigo-600 bg-indigo-600 text-white"
-                        : disabled
-                          ? "cursor-not-allowed border-slate-100 bg-slate-100 text-slate-300 line-through"
-                          : "cursor-pointer border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50"
+                        : state === "unavailable"
+                          ? "cursor-not-allowed border-rose-100 bg-rose-50 text-rose-300 line-through"
+                          : disabled
+                            ? "cursor-not-allowed border-slate-100 bg-slate-100 text-slate-300 line-through"
+                            : "cursor-pointer border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50"
                     )}
                   >
                     {slotRangeLabel(slot.startMin, slot.endMin)}
@@ -796,6 +853,15 @@ function DayPanel({
               <p className="mt-2 text-[11px] text-slate-400">
                 Lunch break {minutesToLabel(parseHHMM(data.lunch.start))} –{" "}
                 {minutesToLabel(parseHHMM(data.lunch.end))} is not bookable.
+              </p>
+            )}
+            {(data?.unavailable?.length ?? 0) > 0 && (
+              <p className="mt-2 text-[11px] text-rose-600">
+                PA unavailable{" "}
+                {data!.unavailable
+                  .map((u) => `${minutesToLabel(parseHHMM(u.start))} – ${minutesToLabel(parseHHMM(u.end))}`)
+                  .join(", ")}
+                .
               </p>
             )}
 
@@ -814,9 +880,9 @@ function DayPanel({
                   className="mt-1 w-full cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400"
                 >
                   <option value="" disabled>
-                    Select work type…
+                    {workTypesLoading ? "Loading work types…" : "Select work type…"}
                   </option>
-                  {WORK_TYPES.map((wt) => (
+                  {workTypes.map((wt) => (
                     <option key={wt} value={wt}>
                       {wt}
                     </option>

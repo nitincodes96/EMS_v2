@@ -5,6 +5,7 @@ import { format } from "date-fns"
 import {
   Building2,
   CalendarCheck,
+  CalendarOff,
   ClipboardList,
   RefreshCw,
   ScrollText,
@@ -19,7 +20,7 @@ import { TablePagination } from "@/components/shared/table-pagination"
 import { EntityAvatar } from "@/components/shared/entity-avatar"
 import { cn } from "@/lib/utils"
 
-type Category = "AUTH" | "USER" | "DEPARTMENT" | "BOOKING" | "LEAVE"
+type Category = "AUTH" | "USER" | "DEPARTMENT" | "BOOKING" | "LEAVE" | "UNAVAILABILITY"
 
 type SystemLog = {
   id: string
@@ -43,6 +44,8 @@ const FILTERS = [
   { key: "USER", label: "Users", icon: Users },
   { key: "DEPARTMENT", label: "Departments", icon: Building2 },
   { key: "BOOKING", label: "Bookings", icon: ClipboardList },
+  { key: "UNAVAILABILITY", label: "Unavailability", icon: CalendarOff },
+  // Leave is retired but old entries keep their category, so the pill stays for history.
   { key: "LEAVE", label: "Leave", icon: CalendarCheck },
 ] as const
 
@@ -52,6 +55,7 @@ const CATEGORY_STYLES: Record<Category, string> = {
   DEPARTMENT: "bg-amber-50 text-amber-700",
   BOOKING: "bg-indigo-50 text-indigo-600",
   LEAVE: "bg-emerald-50 text-emerald-600",
+  UNAVAILABILITY: "bg-rose-50 text-rose-600",
 }
 
 /** "PROJECT_ASSISTANT" -> "Project Assistant" */
