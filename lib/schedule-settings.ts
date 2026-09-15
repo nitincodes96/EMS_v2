@@ -23,6 +23,7 @@ export const DEFAULT_SCHEDULE_SETTINGS = {
   slotDurationMinutes: 30,
   bookingHorizonDays: 7,
   bookingChangeCutoffMinutes: 60,
+  geofenceEnabled: true,
 }
 
 export type ScheduleSettingsInput = typeof DEFAULT_SCHEDULE_SETTINGS
@@ -142,6 +143,10 @@ export function parseScheduleSettings(
     return { ok: false, error: "Change cutoff must be between 0 and 2880 minutes (48 hours)" }
   }
 
+  const geofenceRaw = body.geofenceEnabled
+  const geofenceEnabled =
+    geofenceRaw == null ? current.geofenceEnabled : geofenceRaw === true || geofenceRaw === "true"
+
   return {
     ok: true,
     value: {
@@ -157,6 +162,7 @@ export function parseScheduleSettings(
       slotDurationMinutes,
       bookingHorizonDays,
       bookingChangeCutoffMinutes,
+      geofenceEnabled,
     },
   }
 }
@@ -174,6 +180,7 @@ const SETTING_LABELS: Record<keyof ScheduleSettingsInput, string> = {
   slotDurationMinutes: "slot duration",
   bookingHorizonDays: "booking window",
   bookingChangeCutoffMinutes: "change cutoff",
+  geofenceEnabled: "geo-fence",
 }
 
 function formatSetting(value: string | number | boolean | null): string {

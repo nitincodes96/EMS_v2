@@ -20,7 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Loader2, AlertTriangle, ChevronRight, Users, UserCheck, UserX, ShieldCheck, MailQuestion } from 'lucide-react'
+import { Plus, Loader2, AlertTriangle, ChevronRight, Users, UserCheck, UserX, ShieldCheck, MailQuestion, FileSpreadsheet } from 'lucide-react'
+import { ImportPasDialog } from '@/components/users/import-pas-dialog'
 import { User, Department } from '@/types'
 import { PageHeader } from '@/components/shared/page-header'
 import { SearchInput } from '@/components/shared/search-input'
@@ -67,6 +68,7 @@ export default function SuperAdminUsersPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
   const [departments, setDepartments] = useState<Department[]>([])
   const [filterOrg, setFilterOrg] = useState('all')
   const [filterRole, setFilterRole] = useState('all')
@@ -324,14 +326,31 @@ export default function SuperAdminUsersPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <PageHeader title="User Management" description="Invite, edit, and manage users across departments" />
-        <Button
-          className="gap-2 rounded-lg bg-indigo-600 px-4 text-white cursor-pointer hover:bg-indigo-700"
-          disabled={departments.length === 0}
-          onClick={openCreateDialog}
-        >
-          <Plus className="h-4 w-4" />
-          Invite User
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            className="gap-2 rounded-lg px-4 cursor-pointer"
+            disabled={departments.length === 0}
+            onClick={() => setShowImportDialog(true)}
+          >
+            <FileSpreadsheet className="h-4 w-4 text-indigo-600" />
+            Import PAs (CSV)
+          </Button>
+          <Button
+            className="gap-2 rounded-lg bg-indigo-600 px-4 text-white cursor-pointer hover:bg-indigo-700"
+            disabled={departments.length === 0}
+            onClick={openCreateDialog}
+          >
+            <Plus className="h-4 w-4" />
+            Invite User
+          </Button>
+        </div>
+        <ImportPasDialog
+          open={showImportDialog}
+          onOpenChange={setShowImportDialog}
+          departments={departments}
+          onImported={() => void fetchUsers()}
+        />
         <Dialog
           open={showAddDialog}
           onOpenChange={(open) => {

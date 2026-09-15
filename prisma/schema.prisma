@@ -26,17 +26,14 @@ model Department {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
 
-  // Working hours, slot length, booking limits etc. are no longer per
-  // department — they live on the single ScheduleSettings row. Only the
-  // geo-fence flag stays here since locations are department-specific.
-  geofenceEnabled Boolean @default(true)
+  // Working hours, booking rules, geo-fence locations and holidays are all
+  // organization-wide (ScheduleSettings / AttendanceLocation / Holiday), so a
+  // department is just a name, a description and its people.
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  locations        DepartmentLocation[]
   users            User[]
-  holidays         Holiday[]
   leaves           Leave[]
   attendances      Attendance[]
   bookings         Booking[]
@@ -79,6 +76,10 @@ model ScheduleSettings {
   // before its start time. 0 = allowed right up until the start time.
   bookingChangeCutoffMinutes Int @default(60)
 
+  // When on, attendance punches must come from inside one of the
+  // AttendanceLocation pins. Off = no location prompt at all.
+  geofenceEnabled Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -96,18 +97,18 @@ model WorkType {
   updatedAt DateTime @updatedAt
 }
 
-model DepartmentLocation {
-  id           String     @id @default(uuid())
-  departmentId String
-  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+/**
+ * A place staff may punch attendance from. Organization-wide — every
+ * department's members can check in at any of these.
+ */
+model AttendanceLocation {
+  id           String   @id @default(uuid())
   name         String
   latitude     Float
   longitude    Float
-  radiusMeters Int        @default(100)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-
-  @@index([departmentId])
+  radiusMeters Int      @default(100)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model User {
@@ -177,12 +178,12 @@ model UnavailabilityNotice {
   endTime   String?
   reason    String?  @db.Text
 
-  status      UnavailabilityStatus @default(ACTIVE)
-  withdrawnAt DateTime?
+  status         UnavailabilityStatus @default(ACTIVE)
+  withdrawnAt    DateTime?
   // Null when the PA withdrew it themselves; an admin's id when it was
   // reverted for them (the remark is shared with the PA).
   withdrawnById  String?
-  withdrawRemark String? @db.Text
+  withdrawRemark String?              @db.Text
 
   // How many BOOKED bookings overlapped the window when the notice was given
   // (their faculty were notified). Kept for the admin list.
@@ -368,18 +369,19 @@ model UserSession {
   @@index([userId])
 }
 
+/**
+ * Organization-wide holiday calendar — the same days off for every department.
+ */
 model Holiday {
-  id           String      @id @default(uuid())
-  departmentId String
-  department   Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  name         String
-  date         DateTime    @db.Date
-  type         HolidayType
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id        String      @id @default(uuid())
+  name      String
+  date      DateTime    @db.Date
+  type      HolidayType
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
-  @@unique([departmentId, name, date])
-  @@index([departmentId, date])
+  @@unique([name, date])
+  @@index([date])
 }
 
 enum Role {

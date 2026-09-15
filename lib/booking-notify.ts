@@ -26,25 +26,22 @@ export function bookingSlotLabel(start: Date, end: Date): string {
   return `${format(start, "h:mm a")} – ${format(end, "h:mm a")}`
 }
 
-/** Department name plus every pinned location, for the "where to report" block. */
+/** Department name plus every organization attendance location, for the "where to report" block. */
 export async function loadBookingLocations(departmentId: string): Promise<{
   departmentName: string
   locations: BookingEmailLocation[]
 }> {
-  const department = await prisma.department.findUnique({
-    where: { id: departmentId },
-    select: {
-      name: true,
-      locations: {
-        select: { name: true, latitude: true, longitude: true, radiusMeters: true },
-        orderBy: { createdAt: "asc" },
-      },
-    },
-  })
+  const [department, locations] = await Promise.all([
+    prisma.department.findUnique({ where: { id: departmentId }, select: { name: true } }),
+    prisma.attendanceLocation.findMany({
+      select: { name: true, latitude: true, longitude: true, radiusMeters: true },
+      orderBy: { createdAt: "asc" },
+    }),
+  ])
 
   return {
     departmentName: department?.name ?? "Your department",
-    locations: department?.locations ?? [],
+    locations,
   }
 }
 

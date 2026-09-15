@@ -43,13 +43,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
     createdAt: true,
   } as const
 
-  const [users, holidays, leaves, attendances] = await Promise.all([
+  const [users, leaves, attendances] = await Promise.all([
     prisma.user.findMany({
       where: { departmentId: org.id },
       select: USER_SELECT,
       orderBy: { createdAt: "desc" },
     }),
-    prisma.holiday.findMany({ where: { departmentId: org.id }, orderBy: { date: "asc" } }),
     prisma.leave.findMany({
       where: { departmentId: org.id, status: "PENDING" },
       include: { user: { select: USER_SELECT } },
@@ -93,7 +92,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
       logoUrl: org.logoUrl,
       createdAt: org.createdAt,
       users,
-      holidays,
       leaves,
       attendances: reshapedAttendances,
       absentUsers,

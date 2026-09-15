@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     const lat = typeof latitude === "number" ? latitude : null
     const lng = typeof longitude === "number" ? longitude : null
 
-    const geofenceError = await checkGeofence({ departmentId: sessionUser.departmentId, latitude: lat, longitude: lng })
+    const geofenceError = await checkGeofence({ latitude: lat, longitude: lng })
     if (geofenceError) {
       return NextResponse.json({ error: geofenceError.error }, { status: geofenceError.status })
     }

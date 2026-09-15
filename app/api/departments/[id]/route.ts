@@ -4,8 +4,6 @@ import { getSessionUser } from "@/lib/api-auth"
 import { saveUploadedFile } from "@/lib/upload"
 import { logEvent } from "@/lib/system-log"
 
-type LocationInput = { name: string; latitude: number; longitude: number; radiusMeters: number }
-
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser()
   if (!sessionUser || sessionUser.role !== "ADMIN") {
@@ -28,18 +26,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     const description = (formData.get("description") as string) || null
-    const geofenceEnabledRaw = formData.get("geofenceEnabled") as string | null
-    const geofenceEnabled = geofenceEnabledRaw != null ? geofenceEnabledRaw === "true" : existing.geofenceEnabled
-
-    let locations: LocationInput[] | null = null
-    const locationsRaw = formData.get("locations") as string | null
-    if (locationsRaw) {
-      try {
-        locations = JSON.parse(locationsRaw)
-      } catch {
-        return NextResponse.json({ error: "Invalid locations payload" }, { status: 400 })
-      }
-    }
 
     let logoUrl: string | undefined
     const logo = formData.get("logo") as File | null
@@ -47,42 +33,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       logoUrl = await saveUploadedFile(logo, "departments")
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.department.update({
-        where: { id },
-        data: {
-          name,
-          description,
-          geofenceEnabled,
-          ...(logoUrl ? { logoUrl } : {}),
-        },
-      })
-
-      if (locations) {
-        await tx.departmentLocation.deleteMany({ where: { departmentId: id } })
-        if (locations.length > 0) {
-          await tx.departmentLocation.createMany({
-            data: locations.map((l) => ({
-              departmentId: id,
-              name: l.name,
-              latitude: Number(l.latitude),
-              longitude: Number(l.longitude),
-              radiusMeters: Number(l.radiusMeters) || 100,
-            })),
-          })
-        }
-      }
-    })
-
-    const department = await prisma.department.findUnique({
+    const department = await prisma.department.update({
       where: { id },
-      include: { locations: true },
+      data: {
+        name,
+        description,
+        ...(logoUrl ? { logoUrl } : {}),
+      },
     })
 
     await logEvent({
       category: "DEPARTMENT",
       action: "Department updated",
-      description: describeDepartmentChanges(existing, { name, geofenceEnabled }),
+      description: describeDepartmentChanges(existing, { name }),
       actor: sessionUser,
       entityType: "Department",
       entityId: id,
@@ -97,28 +60,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 /**
- * Names the settings that actually changed, so the audit trail reads
- * "Updated FSM: geo-fence on -> off" rather than just "updated". Falls back
- * to a plain notice when only untracked fields (logo, description, locations)
- * moved.
+ * Names what changed, so the audit trail reads "renamed to X" rather than
+ * just "updated". Falls back to a plain notice when only untracked fields
+ * (logo, description) moved.
  */
-function describeDepartmentChanges(
-  before: DepartmentSettings & { name: string },
-  after: DepartmentSettings & { name: string }
-): string {
-  const changes: string[] = []
-  if (before.name !== after.name) {
-    changes.push(`renamed to "${after.name}"`)
-  }
-  if (before.geofenceEnabled !== after.geofenceEnabled) {
-    changes.push(`geo-fence ${before.geofenceEnabled ? "on" : "off"} \u2192 ${after.geofenceEnabled ? "on" : "off"}`)
-  }
-
-  return changes.length > 0
-    ? `Updated "${after.name}": ${changes.join(", ")}`
+function describeDepartmentChanges(before: { name: string }, after: { name: string }): string {
+  return before.name !== after.name
+    ? `Updated "${after.name}": renamed from "${before.name}"`
     : `Updated "${after.name}" settings`
-}
-
-type DepartmentSettings = {
-  geofenceEnabled: boolean
 }

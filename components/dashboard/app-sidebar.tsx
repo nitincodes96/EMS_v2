@@ -10,6 +10,7 @@ import {
   LogOut,
   Settings,
   ScrollText,
+  SlidersHorizontal,
   Users,
   Watch,
   CalendarPlus2
@@ -36,6 +37,7 @@ const NAV_ITEMS = {
   ADMIN: [
     { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard },
     { title: "Departments", url: "/admin/departments", icon: Building2 },
+    { title: "Global Settings", url: "/admin/global-settings", icon: SlidersHorizontal },
     { title: "Users", url: "/admin/users", icon: Users },
     { title: "Attendance", url: "/admin/attendance", icon: Watch },
     { title: "Bookings", url: "/admin/bookings", icon: ClipboardList },

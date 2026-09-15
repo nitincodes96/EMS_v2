@@ -32,17 +32,12 @@ export async function GET(request: Request) {
     return true
   }
 
-  const [user, department, schedule, attendance, leaves] = await Promise.all([
+  const [user, holidays, schedule, attendance, leaves] = await Promise.all([
     prisma.user.findUnique({
       where: { id: sessionUser.id },
       select: { createdAt: true, joiningDate: true },
     }),
-    prisma.department.findUnique({
-      where: { id: sessionUser.departmentId },
-      select: {
-        holidays: { select: { date: true } },
-      },
-    }),
+    prisma.holiday.findMany({ select: { date: true } }),
     getScheduleSettings(),
     prisma.attendance.findMany({
       where: { userId: sessionUser.id },
@@ -103,7 +98,7 @@ export async function GET(request: Request) {
   // -------------------------------------------------- synthesized absences
   const workingDays = workingDaySet(schedule.workingDays)
 
-  const holidayKeys = new Set((department?.holidays ?? []).map((h) => format(h.date, "yyyy-MM-dd")))
+  const holidayKeys = new Set(holidays.map((h) => format(h.date, "yyyy-MM-dd")))
 
   const leaveKeys = new Set<string>()
   for (const l of leaves) {

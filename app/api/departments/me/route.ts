@@ -10,17 +10,14 @@ export async function GET() {
     return NextResponse.json({ error: "No department associated with this account" }, { status: 404 })
   }
 
-  const [department, schedule] = await Promise.all([
-    prisma.department.findUnique({
-      where: { id: sessionUser.departmentId },
-      include: {
-        locations: true,
-        holidays: {
-          orderBy: { date: "asc" },
-        },
-      },
-    }),
+  // Holidays and attendance locations are organization-wide now, but they're
+  // still surfaced here under the department so every dashboard keeps reading
+  // them from one place.
+  const [department, schedule, holidays, locations] = await Promise.all([
+    prisma.department.findUnique({ where: { id: sessionUser.departmentId } }),
     getScheduleSettings(),
+    prisma.holiday.findMany({ orderBy: { date: "asc" } }),
+    prisma.attendanceLocation.findMany({ orderBy: { createdAt: "asc" } }),
   ])
 
   if (!department) {
@@ -42,16 +39,16 @@ export async function GET() {
       shiftStartTime: schedule.shiftStartTime,
       shiftEndTime: schedule.shiftEndTime,
       workingDays: schedule.workingDays,
-      geofenceEnabled: department.geofenceEnabled,
+      geofenceEnabled: schedule.geofenceEnabled,
       facultyBookingLimit: schedule.facultyBookingLimit,
       facultyActiveBookingCount: activeBookingCount,
-      holidays: department.holidays.map((holiday) => ({
+      holidays: holidays.map((holiday) => ({
         id: holiday.id,
         name: holiday.name,
         date: holiday.date,
         type: holiday.type,
       })),
-      locations: department.locations.map((l) => ({
+      locations: locations.map((l) => ({
         name: l.name,
         latitude: l.latitude,
         longitude: l.longitude,

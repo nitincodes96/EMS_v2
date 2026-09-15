@@ -14,16 +14,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { HolidayCalendar } from '@/components/shared/holiday-calendar'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -37,8 +29,6 @@ import {
   Users,
   ArrowLeft,
   Calendar,
-  CalendarDays,
-  Plus,
   Loader2,
   CheckCircle2,
   XCircle,
@@ -53,7 +43,6 @@ import {
 import { DepartmentDetailSkeleton } from '@/components/dashboard/skeletons'
 import { UserFilter } from '@/components/shared/filters/user-filter'
 import { format } from 'date-fns'
-import { PREDEFINED_RELIGIOUS_HOLIDAYS } from '@/lib/holidays'
 import { EntityAvatar } from '@/components/shared/entity-avatar'
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -91,13 +80,6 @@ interface Attendance {
   user: User
 }
 
-interface Holiday {
-  id: string
-  name: string
-  date: string
-  type: 'NATIONAL' | 'RELIGIOUS' | 'CUSTOM'
-}
-
 interface DepartmentDetails {
   id: string
   name: string
@@ -105,7 +87,6 @@ interface DepartmentDetails {
   logoUrl?: string | null
   createdAt: string
   users: User[]
-  holidays: Holiday[]
   leaves: Leave[]
   attendances: Attendance[]
   absentUsers: User[]
@@ -118,7 +99,7 @@ interface DepartmentDetails {
   }
 }
 
-type SidebarTab = 'activity' | 'leaves' | 'holidays'
+type SidebarTab = 'activity' | 'leaves'
 
 const ROLE_LABELS: Record<string, string> = {
   PROJECT_ASSISTANT: 'Project Assistant',
@@ -165,13 +146,6 @@ export default function DepartmentDetailsPage() {
   const [filterRole, setFilterRole] = useState('all')
   const [filterMonth, setFilterMonth] = useState('all')
   const [filterYear, setFilterYear] = useState('all')
-
-  // ── Holiday state ──
-  const [showHolidayDialog, setShowHolidayDialog] = useState(false)
-  const [holidayForm, setHolidayForm] = useState({ name: '', date: '', type: 'CUSTOM' })
-  const [selectedHolidayId, setSelectedHolidayId] = useState<string | null>(null)
-  const [draftReligious, setDraftReligious] = useState<{ name: string; date: string }[]>([])
-  const [addMode, setAddMode] = useState<'picker' | 'custom'>('picker')
 
   // ── Sidebar tab state ──
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('activity')
@@ -298,59 +272,6 @@ export default function DepartmentDetailsPage() {
     }
   }
 
-  const openHolidayDialog = (holidayOrDate?: Holiday | Date) => {
-    setDraftReligious([])
-    if (holidayOrDate instanceof Date) {
-      setSelectedHolidayId(null)
-      setHolidayForm({ name: '', date: format(holidayOrDate, 'yyyy-MM-dd'), type: 'CUSTOM' })
-      setAddMode('custom')
-    } else if (holidayOrDate) {
-      setSelectedHolidayId(holidayOrDate.id)
-      setHolidayForm({ name: holidayOrDate.name, date: new Date(holidayOrDate.date).toISOString().split('T')[0], type: holidayOrDate.type })
-      setAddMode('picker')
-    } else {
-      setSelectedHolidayId(null)
-      setHolidayForm({ name: '', date: '', type: 'RELIGIOUS' })
-      setAddMode('picker')
-    }
-    setShowHolidayDialog(true)
-  }
-
-  const handleSaveHoliday = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSubmitting(true)
-    try {
-      if (selectedHolidayId) {
-        await fetch(`/api/departments/${org?.id}/holidays/${selectedHolidayId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(holidayForm),
-        })
-      } else {
-        await fetch(`/api/departments/${org?.id}/holidays`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(holidayForm),
-        })
-      }
-      setShowHolidayDialog(false)
-      fetchDetails()
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to save holiday')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const handleDeleteHoliday = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this holiday?')) return
-    try {
-      await fetch(`/api/departments/${org?.id}/holidays/${id}`, { method: 'DELETE' })
-      fetchDetails()
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to delete holiday')
-    }
-  }
 
   if (loading) return <DepartmentDetailSkeleton />
 
@@ -560,7 +481,6 @@ export default function DepartmentDetailsPage() {
             {([
               { key: 'activity', label: 'Activity', icon: Activity, dot: null },
               // Leave is retired in favour of PA unavailability notices, so its tab stays hidden.
-              { key: 'holidays', label: 'Holidays', icon: CalendarDays, dot: null },
             ] as { key: SidebarTab; label: string; icon: LucideIcon; dot: number | null }[]).map((tab) => (
               <button
                 key={tab.key}
@@ -678,46 +598,6 @@ export default function DepartmentDetailsPage() {
             </div>
           )}
 
-          {/* ── Holidays Tab ── */}
-          {sidebarTab === 'holidays' && (
-            <div className="flex flex-col min-h-0">
-              <div className="flex items-center justify-between px-2 py-2">
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{org.holidays.length} Holidays</span>
-                <Button size="icon" variant="ghost" className="h-6 w-6 cursor-pointer hover:bg-red-50 hover:text-red-600" onClick={() => openHolidayDialog()}>
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-
-              <div className="overflow-y-auto pb-3" style={{ maxHeight: '420px' }}>
-                {/* Compact calendar */}
-                <div className="px-2 pb-2 border-b border-slate-100 mb-2">
-                  <HolidayCalendar holidays={org?.holidays || []} size="compact" />
-                </div>
-
-                {/* Holiday list */}
-                <div className="px-2 space-y-1">
-                  {org.holidays.length === 0 ? (
-                    <div className="text-center py-4 border border-dashed border-slate-200 rounded-lg">
-                      <p className="text-xs text-slate-400">No holidays defined.</p>
-                      <Button variant="link" className="text-[11px] text-red-500 h-auto p-0 mt-0.5 cursor-pointer" onClick={() => openHolidayDialog()}>Add first holiday</Button>
-                    </div>
-                  ) : (
-                    org.holidays.map(h => (
-                      <div key={h.id} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-100 group transition-colors">
-                        <div>
-                          <p className="text-xs font-semibold text-slate-800 leading-tight">{h.name}</p>
-                          <p className="text-[10px] text-slate-400">{format(new Date(h.date), 'MMM d, yyyy')} · <span className="capitalize">{h.type.toLowerCase()}</span></p>
-                        </div>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-300 hover:text-slate-700 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => openHolidayDialog(h)}>
-                          <Pencil className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -777,150 +657,6 @@ export default function DepartmentDetailsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Holiday Dialog ── */}
-      <Dialog open={showHolidayDialog} onOpenChange={setShowHolidayDialog}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{selectedHolidayId ? 'Edit Holiday' : 'Add Holiday'}</DialogTitle>
-            <DialogDescription>
-              {selectedHolidayId ? 'Update details for this holiday.' : 'Select a religious holiday and set its date, or add a custom event.'}
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedHolidayId ? (
-            <form onSubmit={handleSaveHoliday} className="space-y-4 pt-4">
-              <div className="space-y-2">
-                <Label htmlFor="holidayName">Name</Label>
-                <Input id="holidayName" value={holidayForm.name} onChange={(e) => setHolidayForm({ ...holidayForm, name: e.target.value })} placeholder="e.g. Diwali" required />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="holidayDate">Date</Label>
-                  <Input id="holidayDate" type="date" value={holidayForm.date} onChange={(e) => setHolidayForm({ ...holidayForm, date: e.target.value })} required />
-                </div>
-                <div className="space-y-2">
-                  <Label>Type</Label>
-                  <Select value={holidayForm.type} onValueChange={(val) => val && setHolidayForm({ ...holidayForm, type: val })}>
-                    <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="NATIONAL">National</SelectItem>
-                      <SelectItem value="RELIGIOUS">Religious</SelectItem>
-                      <SelectItem value="CUSTOM">Custom</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <DialogFooter className="gap-2 sm:justify-between pt-4">
-                <Button variant="ghost" type="button" className="cursor-pointer text-red-600 hover:text-red-700 hover:bg-red-50 px-2 flex-none" onClick={() => { setShowHolidayDialog(false); handleDeleteHoliday(selectedHolidayId) }}>Delete</Button>
-                <div className="flex gap-2">
-                  <Button variant="outline" type="button" className="cursor-pointer" onClick={() => setShowHolidayDialog(false)}>Cancel</Button>
-                  <Button type="submit" className="text-white cursor-pointer" style={{ backgroundColor: 'var(--theme)' }} disabled={submitting}>
-                    {submitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Save
-                  </Button>
-                </div>
-              </DialogFooter>
-            </form>
-          ) : addMode === 'custom' ? (
-            <div className="space-y-4 pt-4">
-              <p className="text-xs text-slate-500">Adding holiday for <span className="font-semibold text-slate-700">{holidayForm.date ? format(new Date(holidayForm.date + 'T00:00:00'), 'MMMM do, yyyy') : ''}</span></p>
-              <div className="space-y-2">
-                <Label>Holiday Name</Label>
-                <Input placeholder="e.g. Founder's Day" value={holidayForm.name} onChange={e => setHolidayForm({ ...holidayForm, name: e.target.value })} required autoFocus />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Date</Label>
-                  <Input type="date" value={holidayForm.date} onChange={e => setHolidayForm({ ...holidayForm, date: e.target.value })} required />
-                </div>
-                <div className="space-y-2">
-                  <Label>Type</Label>
-                  <Select value={holidayForm.type} onValueChange={(t: any) => setHolidayForm({ ...holidayForm, type: t })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="NATIONAL">National</SelectItem>
-                      <SelectItem value="RELIGIOUS">Religious</SelectItem>
-                      <SelectItem value="CUSTOM">Custom</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="flex gap-2 justify-between pt-2">
-                <Button type="button" variant="ghost" className="text-slate-500 cursor-pointer" onClick={() => setAddMode('picker')}>← Back to picker</Button>
-                <div className="flex gap-2">
-                  <Button type="button" variant="outline" className="cursor-pointer" onClick={() => setShowHolidayDialog(false)}>Cancel</Button>
-                  <Button type="button" className="text-white cursor-pointer" style={{ backgroundColor: 'var(--theme)' }} disabled={submitting || !holidayForm.name || !holidayForm.date}
-                    onClick={async () => {
-                      if (!holidayForm.name || !holidayForm.date) return
-                      setSubmitting(true)
-                      try {
-                        await fetch(`/api/departments/${org?.id}/holidays`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(holidayForm) })
-                        setShowHolidayDialog(false)
-                        fetchDetails()
-                      } catch (err) { }
-                      setSubmitting(false)
-                    }}
-                  >
-                    {submitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Add Holiday
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-6 pt-4">
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                  {PREDEFINED_RELIGIOUS_HOLIDAYS.map(name => {
-                    const isAdded = org?.holidays.some(h => h.name === name)
-                    const isSelected = draftReligious.some(d => d.name === name)
-                    if (isAdded) return null
-                    return (
-                      <button key={name} onClick={() => { isSelected ? setDraftReligious(draftReligious.filter(d => d.name !== name)) : setDraftReligious([...draftReligious, { name, date: '' }]) }}
-                        className={`text-[11px] font-medium p-2 rounded-lg border transition-all text-center ${isSelected ? 'text-white' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
-                        style={isSelected ? { backgroundColor: 'var(--theme)', borderColor: 'var(--theme)' } : {}}
-                      >
-                        {name}
-                      </button>
-                    )
-                  })}
-                </div>
-                {draftReligious.length > 0 && (
-                  <div className="mt-4 p-4 border border-slate-100 rounded-xl bg-slate-50/50 space-y-3">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Set Dates for Selected Holidays</p>
-                    <div className="space-y-2">
-                      {draftReligious.map((draft, idx) => (
-                        <div key={draft.name} className="flex items-center gap-3">
-                          <span className="text-xs font-semibold text-slate-700 w-32 shrink-0">{draft.name}</span>
-                          <Input type="date" className="h-8 text-xs bg-white w-full" value={draft.date} onChange={(e) => { const nd = [...draftReligious]; nd[idx].date = e.target.value; setDraftReligious(nd) }} />
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex justify-end pt-2">
-                      <Button size="sm" className="text-white" style={{ backgroundColor: 'var(--theme)' }} disabled={submitting || draftReligious.some(d => !d.date)}
-                        onClick={async () => {
-                          setSubmitting(true)
-                          try {
-                            await Promise.all(draftReligious.map(d => fetch(`/api/departments/${org?.id}/holidays`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: d.name, date: d.date, type: 'RELIGIOUS' }) })))
-                            setDraftReligious([])
-                            fetchDetails()
-                          } catch (err) { }
-                          setSubmitting(false)
-                        }}
-                      >
-                        {submitting && <Loader2 className="h-3 w-3 animate-spin mr-2" />} Add Selected
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="pt-4 border-t border-slate-100">
-                <Button type="button" variant="outline" className="w-full cursor-pointer border-dashed" onClick={() => setAddMode('custom')}>
-                  <Plus className="h-4 w-4 mr-2" /> Add Custom / National Holiday
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

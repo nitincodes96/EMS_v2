@@ -5,9 +5,6 @@ import { generateUniqueOrgSlug } from "@/lib/slug"
 import { saveUploadedFile } from "@/lib/upload"
 import { logEvent } from "@/lib/system-log"
 
-type LocationInput = { name: string; latitude: number; longitude: number; radiusMeters: number }
-type HolidayInput = { name: string; date: string; type: "CUSTOM" | "RELIGIOUS" | "NATIONAL" }
-
 export async function GET() {
   const sessionUser = await getSessionUser()
   // Moderators work across the organization, so they may read the department list.
@@ -17,7 +14,6 @@ export async function GET() {
 
   const departments = await prisma.department.findMany({
     include: {
-      locations: true,
       _count: { select: { users: true, leaves: true, attendances: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -53,32 +49,6 @@ export async function POST(request: Request) {
     }
 
     const description = (formData.get("description") as string) || null
-    // Geo-fencing is on unless explicitly switched off. Working hours, slot
-    // length and booking limits are organization-wide (ScheduleSettings), so
-    // they're no longer part of a department.
-    const geofenceEnabledRaw = formData.get("geofenceEnabled") as string | null
-    const geofenceEnabled = geofenceEnabledRaw != null ? geofenceEnabledRaw === "true" : true
-
-    let locations: LocationInput[] = []
-    const locationsRaw = formData.get("locations") as string | null
-    if (locationsRaw) {
-      try {
-        locations = JSON.parse(locationsRaw)
-      } catch {
-        return NextResponse.json({ error: "Invalid locations payload" }, { status: 400 })
-      }
-    }
-
-    let holidays: HolidayInput[] = []
-    const holidaysRaw = formData.get("holidays") as string | null
-    if (holidaysRaw) {
-      try {
-        holidays = JSON.parse(holidaysRaw)
-      } catch {
-        return NextResponse.json({ error: "Invalid holidays payload" }, { status: 400 })
-      }
-    }
-
     const organization = await prisma.organization.findFirst()
     if (!organization) {
       return NextResponse.json({ error: "No organization is registered" }, { status: 400 })
@@ -99,34 +69,13 @@ export async function POST(request: Request) {
         description,
         logoUrl,
         organizationId: organization.id,
-        geofenceEnabled,
-        locations: {
-          createMany: {
-            data: locations.map((l) => ({
-              name: l.name,
-              latitude: Number(l.latitude),
-              longitude: Number(l.longitude),
-              radiusMeters: Number(l.radiusMeters) || 100,
-            })),
-          },
-        },
-        holidays: {
-          createMany: {
-            data: holidays.map((h) => ({
-              name: h.name,
-              date: new Date(h.date),
-              type: h.type,
-            })),
-          },
-        },
       },
-      include: { locations: true },
     })
 
     await logEvent({
       category: "DEPARTMENT",
       action: "Department created",
-      description: `Created department "${department.name}"${locations.length > 0 ? ` with ${locations.length} location${locations.length === 1 ? "" : "s"}` : ""}${geofenceEnabled ? "" : " (geo-fence off)"}`,
+      description: `Created department "${department.name}"`,
       actor: sessionUser,
       entityType: "Department",
       entityId: department.id,

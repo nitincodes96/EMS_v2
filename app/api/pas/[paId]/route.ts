@@ -104,10 +104,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ paId
       },
     }),
     prisma.holiday.findMany({
-      where: {
-        departmentId: pa.departmentId,
-        date: { gte: monthStart, lte: monthEnd },
-      },
+      where: { date: { gte: monthStart, lte: monthEnd } },
       orderBy: { date: "asc" },
       select: { id: true, name: true, date: true, type: true },
     }),
